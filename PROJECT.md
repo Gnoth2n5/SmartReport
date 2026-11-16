@@ -59,7 +59,7 @@ SmartReport is a multi-database analytics and reporting platform built with Lara
 | M1 | Cluster 1: SQLite Schema, Dữ Liệu Thật 4 DB & Commit Gate | Features 1-9: `config/smartreport.php`, Migrations & Models (`DataSource`, `MenuGroup`, `RolePermission`, `CustomView`, `User`), `ExternalTestDatabaseProvisioner`, seed 5 custom views, `Cluster1EnvironmentAndSeedTest` | None | DONE |
 | M2 | Cluster 2: DuckDB Multi-DB Federation Engine, Snapshot Paging & Exporter | Features 10-19: `SqlParameterExtractor`, `SqlSafetyValidator`, `DuckDbSourceAdapter`, `DuckDbReportEngine`, `SnapshotManager`, `DuckDbExporter`, `MultiDbEngineAndExporterTest` | M1 | DONE |
 | M3 | Cluster 3: Filament Admin Resources | Features 20-25: `DynamicSidebarBuilder`, `DataSourceResource` (3 drivers + test connection action), `MenuGroupResource`, `RolePermissionResource`, `FilamentAdminResourcesTest` | M1 | DONE |
-| M4 | Cluster 4: Custom View Builder | Features 26-29: `CustomViewResource` (`single_or_union` & `federated_join`), Auto-detect `@param`, Test SQL 10-row preview action, `CustomViewBuilderTest` | M2, M3 | PLANNED |
+| M4 | Cluster 4: Custom View Builder | Features 26-29: `CustomViewResource` (`single_or_union` & `federated_join`), Auto-detect `@param`, Test SQL 10-row preview action, `CustomViewBuilderTest` | M2, M3 | DONE |
 | M5 | Cluster 5: Report Runner & SQL Export Pages | Features 30-35: `ReportRunnerPage` (3-tab UI, multi-DB selector, snapshot pagination), `SqlExportPage`, `ReportRunnerAndSqlExportTest` | M2, M4 | PLANNED |
 | M6 | Cluster 6: Playwright E2E & Final Verification | Features 36-40: `tests/e2e/smartreport.spec.ts` (E2E 1-4), acceptance screenshots in `docs/screenshots/`, full test suite execution, final commit gate | M1-M5 | PLANNED |
 
