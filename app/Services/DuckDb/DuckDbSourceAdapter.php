@@ -100,8 +100,26 @@ class DuckDbSourceAdapter
             $normalized[$cleanKey] = $val;
         }
 
-        return (string) preg_replace_callback('/@([a-zA-Z0-9_]+)\b/', function ($matches) use ($normalized) {
-            $paramName = $matches[1];
+        // Match string literals, comments, or @parameters in token order so literals and comments are preserved
+        $pattern = '/(\'(?:[^\'\\\\]|\\\\.|(?:\'\'))*\')|(--[^\r\n]*|\/\*[\s\S]*?\*\/)|@([a-zA-Z0-9_]+)\b/';
+
+        return (string) preg_replace_callback($pattern, function ($matches) use ($normalized) {
+            // Group 1: string literal — preserve verbatim
+            if (isset($matches[1]) && $matches[1] !== '') {
+                return $matches[1];
+            }
+
+            // Group 2: comment — preserve verbatim
+            if (isset($matches[2]) && $matches[2] !== '') {
+                return $matches[2];
+            }
+
+            // Group 3: parameter name
+            if (! isset($matches[3]) || $matches[3] === '') {
+                return $matches[0];
+            }
+
+            $paramName = $matches[3];
             $lower = strtolower($paramName);
 
             // Special case: @today with no explicit value passed defaults to current date

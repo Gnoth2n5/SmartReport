@@ -11,6 +11,13 @@ class SqlParameterExtractor
      */
     public const PARAM_REGEX = '/@([a-zA-Z0-9_]+)/';
 
+    protected SqlSafetyValidator $validator;
+
+    public function __construct(?SqlSafetyValidator $validator = null)
+    {
+        $this->validator = $validator ?? new SqlSafetyValidator;
+    }
+
     /**
      * Extract parameter definitions from a raw SQL string.
      *
@@ -39,7 +46,10 @@ class SqlParameterExtractor
             return [];
         }
 
-        if (preg_match_all(self::PARAM_REGEX, $sql, $matches)) {
+        // Mask comments and string literals so parameter-like tokens inside them (e.g. emails) are ignored
+        $sanitized = $this->validator->stripCommentsAndLiterals($sql);
+
+        if (preg_match_all(self::PARAM_REGEX, $sanitized, $matches)) {
             $rawTokens = $matches[1];
             $unique = [];
             foreach ($rawTokens as $token) {

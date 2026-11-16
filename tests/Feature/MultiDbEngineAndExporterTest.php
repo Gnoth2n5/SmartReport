@@ -407,6 +407,8 @@ class MultiDbEngineAndExporterTest extends TestCase
         // 3. Stacked queries / multiple statements
         $this->expectSqlSafetyViolation('SELECT * FROM users; DROP TABLE contracts;');
         $this->expectSqlSafetyViolation('SELECT 1; SELECT 2;');
+        $this->expectSqlSafetyViolation("SELECT '-- bypass' AS note; DROP TABLE contracts;");
+        $this->expectSqlSafetyViolation("SELECT '/* bypass' AS note; DROP TABLE contracts; /* */");
 
         // 4. Execution and system commands
         $this->expectSqlSafetyViolation('EXEC xp_cmdshell "whoami";');
@@ -419,11 +421,17 @@ class MultiDbEngineAndExporterTest extends TestCase
         $this->expectSqlSafetyViolation("INSTALL 'httpfs';");
         $this->expectSqlSafetyViolation("LOAD 'spatial';");
 
-        // 6. Filesystem read/write functions
+        // 6. Filesystem read/write functions and DuckDB table readers
         $this->expectSqlSafetyViolation("SELECT * FROM read_csv('/etc/passwd');");
         $this->expectSqlSafetyViolation("SELECT * FROM read_parquet('s3://secret.parquet');");
         $this->expectSqlSafetyViolation("SELECT * FROM read_blob('/etc/shadow');");
         $this->expectSqlSafetyViolation("SELECT * FROM write_csv('/tmp/out.csv');");
+        $this->expectSqlSafetyViolation("SELECT * FROM parquet_scan('confidential.parquet');");
+        $this->expectSqlSafetyViolation("SELECT * FROM read_duckdb('storage/app/snapshots/secret.duckdb');");
+        $this->expectSqlSafetyViolation("SELECT * FROM glob('/*');");
+        $this->expectSqlSafetyViolation('SELECT * FROM duckdb_secrets();');
+        $this->expectSqlSafetyViolation("SELECT * FROM read_json_objects('/etc/passwd');");
+        $this->expectSqlSafetyViolation("SELECT * FROM read_single_csv_file('/etc/passwd');");
 
         // 7. Non-read queries starting with other tokens
         $this->expectSqlSafetyViolation('PRAGMA table_info("contracts");');
@@ -454,6 +462,43 @@ class MultiDbEngineAndExporterTest extends TestCase
         $this->assertSame('select', $tokenMap['Status']['type']);
         $this->assertArrayHasKey('ACTIVE', $tokenMap['Status']['options']);
         $this->assertSame('text', $tokenMap['CustomerNote']['type']);
+    }
+
+    /**
+     * Test 10: Adversarial SQL safety evasion and parameter extractor literal masking.
+     */
+    public function test_adversarial_sql_safety_evasion_and_param_extractor_literal_masking(): void
+    {
+        // 1. Stacked query evasion with single-line comment delimiter inside string literal
+        $this->expectSqlSafetyViolation("SELECT '-- bypass' AS note; DROP TABLE contracts;");
+
+        // 2. Stacked query evasion with multiline comment delimiter inside string literal
+        $this->expectSqlSafetyViolation("SELECT '/* bypass' AS note; DROP TABLE contracts; /* */");
+
+        // 3. DuckDB table functions for filesystem and secret access
+        $this->expectSqlSafetyViolation("SELECT * FROM parquet_scan('confidential.parquet');");
+        $this->expectSqlSafetyViolation("SELECT * FROM read_duckdb('storage/app/snapshots/secret.duckdb');");
+        $this->expectSqlSafetyViolation("SELECT * FROM glob('/*');");
+        $this->expectSqlSafetyViolation('SELECT * FROM duckdb_secrets();');
+        $this->expectSqlSafetyViolation("SELECT * FROM read_json_objects('/etc/passwd');");
+        $this->expectSqlSafetyViolation("SELECT * FROM read_single_csv_file('/etc/passwd');");
+
+        // 4. Parameter extractor ignores email addresses inside string literals
+        $sqlWithEmail = "SELECT * FROM users WHERE email = 'admin@example.com' AND name = @real_user";
+        $extractedTokens = $this->extractor->extractTokens($sqlWithEmail);
+        $this->assertSame(['real_user'], $extractedTokens);
+        $this->assertNotContains('example', $extractedTokens);
+
+        // 5. Parameter extractor ignores commented parameters
+        $sqlWithComment = "SELECT * FROM users WHERE id = @user_id -- Note: @deprecated_param\n/* @ignored_block */";
+        $commentTokens = $this->extractor->extractTokens($sqlWithComment);
+        $this->assertSame(['user_id'], $commentTokens);
+        $this->assertNotContains('deprecated_param', $commentTokens);
+        $this->assertNotContains('ignored_block', $commentTokens);
+
+        // 6. Adapter parameter binding preserves email string literal without corrupting it
+        $bound = $this->adapter->bindParameters($sqlWithEmail, ['real_user' => 'Alice']);
+        $this->assertSame("SELECT * FROM users WHERE email = 'admin@example.com' AND name = 'Alice'", $bound);
     }
 
     /**

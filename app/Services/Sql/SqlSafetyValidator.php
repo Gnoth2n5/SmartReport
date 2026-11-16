@@ -52,6 +52,10 @@ class SqlSafetyValidator
         'read_text',
         'read_ndjson',
         'read_xlsx',
+        'parquet_scan',
+        'read_duckdb',
+        'glob',
+        'duckdb_secrets',
     ];
 
     /**
@@ -80,9 +84,9 @@ class SqlSafetyValidator
     /**
      * Check if a SQL string is safe to execute.
      *
-     * @param  list<string>  $violations
+     * @param  list<string>|null  $violations
      */
-    public function isSafe(string $sql, array &$violations = []): bool
+    public function isSafe(string $sql, ?array &$violations = null): bool
     {
         $violations = [];
         $trimmed = trim($sql);
@@ -93,8 +97,30 @@ class SqlSafetyValidator
             return false;
         }
 
-        // 1. Strip comments and string literals for syntax and keyword inspection
-        $withoutComments = $this->stripComments($trimmed);
+        $hasUnclosedLiteral = false;
+        $hasUnclosedComment = false;
+
+        // 1. Strip comments in token order (preserving string literals and comment delimiters within them)
+        $withoutComments = $this->tokenizeAndSanitize(
+            $trimmed,
+            stripComments: true,
+            stripLiterals: false,
+            hasUnclosedLiteral: $hasUnclosedLiteral,
+            hasUnclosedComment: $hasUnclosedComment
+        );
+
+        if ($hasUnclosedLiteral) {
+            $violations[] = 'Unclosed string literal detected in SQL query.';
+
+            return false;
+        }
+
+        if ($hasUnclosedComment) {
+            $violations[] = 'Unclosed multiline comment detected in SQL query.';
+
+            return false;
+        }
+
         $normalized = trim($withoutComments);
 
         if ($normalized === '') {
@@ -128,7 +154,7 @@ class SqlSafetyValidator
             }
         }
 
-        // 5. Block filesystem and dangerous functions (read_csv, read_parquet, write_*, etc.)
+        // 5. Block filesystem and dangerous functions (read_csv, read_parquet, parquet_scan, glob, duckdb_secrets, etc.)
         foreach (self::FORBIDDEN_FUNCTIONS as $fn) {
             $pattern = '/\b'.preg_quote($fn, '/').'\b/i';
             if (preg_match($pattern, $withoutLiterals)) {
@@ -138,7 +164,14 @@ class SqlSafetyValidator
             }
         }
 
-        // 6. Block any write_* filesystem functions
+        // 6. Block any read_* table functions (e.g. read_json_objects, read_single_csv_file, read_ndjson_auto, etc.)
+        if (preg_match('/\bread_[a-zA-Z0-9_]+\b/i', $withoutLiterals, $m)) {
+            $violations[] = "Forbidden SQL function detected: [{$m[0]}].";
+
+            return false;
+        }
+
+        // 7. Block any write_* filesystem functions
         if (preg_match('/\bwrite_[a-zA-Z0-9_]+\b/i', $withoutLiterals, $m)) {
             $violations[] = "Forbidden filesystem write function detected: [{$m[0]}].";
 
@@ -170,25 +203,136 @@ class SqlSafetyValidator
     }
 
     /**
-     * Strip SQL single-line and multiline comments.
+     * Strip SQL single-line and multiline comments in token order,
+     * ensuring comment delimiters inside string literals are preserved.
      */
     public function stripComments(string $sql): string
     {
-        // Remove single-line comments (-- ...)
-        $noSingle = preg_replace('/--.*$/m', '', $sql);
-
-        // Remove multiline comments (/* ... */)
-        $noMulti = preg_replace('/\/\*.*?\*\//s', '', (string) $noSingle);
-
-        return (string) $noMulti;
+        return $this->tokenizeAndSanitize($sql, stripComments: true, stripLiterals: false);
     }
 
     /**
-     * Strip string literals ('...') to prevent false positives on keywords inside values.
+     * Strip string literals ('...') in token order to prevent false positives
+     * on keywords inside values.
      */
     public function stripStringLiterals(string $sql): string
     {
-        // Replace single-quoted strings: '([^'\\]|\\.)*'
-        return (string) preg_replace("/'([^'\\\\]|\\\\.)*'/", "''", $sql);
+        return $this->tokenizeAndSanitize($sql, stripComments: false, stripLiterals: true);
+    }
+
+    /**
+     * Strip both comments and string literals in a single safe token-order pass.
+     */
+    public function stripCommentsAndLiterals(string $sql): string
+    {
+        return $this->tokenizeAndSanitize($sql, stripComments: true, stripLiterals: true);
+    }
+
+    /**
+     * Tokenize SQL string in sequential order to safely process string literals
+     * and comments without cross-token delimiter confusion.
+     */
+    public function tokenizeAndSanitize(
+        string $sql,
+        bool $stripComments = true,
+        bool $stripLiterals = false,
+        bool &$hasUnclosedLiteral = false,
+        bool &$hasUnclosedComment = false
+    ): string {
+        $len = strlen($sql);
+        $out = '';
+        $i = 0;
+        $hasUnclosedLiteral = false;
+        $hasUnclosedComment = false;
+
+        while ($i < $len) {
+            $c = $sql[$i];
+
+            // 1. Single-quoted string literal
+            if ($c === "'") {
+                $start = $i;
+                $i++;
+                $closed = false;
+                while ($i < $len) {
+                    if ($sql[$i] === "'") {
+                        // Escaped single quote '' in standard SQL
+                        if ($i + 1 < $len && $sql[$i + 1] === "'") {
+                            $i += 2;
+
+                            continue;
+                        }
+                        $i++;
+                        $closed = true;
+                        break;
+                    } elseif ($sql[$i] === '\\' && $i + 1 < $len) {
+                        // Backslash escape \'
+                        $i += 2;
+
+                        continue;
+                    }
+                    $i++;
+                }
+
+                if (! $closed) {
+                    $hasUnclosedLiteral = true;
+                }
+
+                if ($stripLiterals) {
+                    $out .= "''";
+                } else {
+                    $out .= substr($sql, $start, $i - $start);
+                }
+
+                continue;
+            }
+
+            // 2. Single-line comment (-- ...)
+            if ($c === '-' && $i + 1 < $len && $sql[$i + 1] === '-') {
+                $start = $i;
+                $i += 2;
+                while ($i < $len && $sql[$i] !== "\n" && $sql[$i] !== "\r") {
+                    $i++;
+                }
+                if ($stripComments) {
+                    $out .= ' ';
+                } else {
+                    $out .= substr($sql, $start, $i - $start);
+                }
+
+                continue;
+            }
+
+            // 3. Multiline comment (/* ... */)
+            if ($c === '/' && $i + 1 < $len && $sql[$i + 1] === '*') {
+                $start = $i;
+                $i += 2;
+                $closed = false;
+                while ($i + 1 < $len) {
+                    if ($sql[$i] === '*' && $sql[$i + 1] === '/') {
+                        $i += 2;
+                        $closed = true;
+                        break;
+                    }
+                    $i++;
+                }
+                if (! $closed) {
+                    $hasUnclosedComment = true;
+                    $i = $len;
+                }
+                if ($stripComments) {
+                    $out .= ' ';
+                } else {
+                    $out .= substr($sql, $start, $i - $start);
+                }
+
+                continue;
+            }
+
+            // 4. Regular characters
+            $out .= $c;
+            $i++;
+        }
+
+        return $out;
     }
 }
