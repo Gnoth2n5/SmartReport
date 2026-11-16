@@ -1,0 +1,12 @@
+{
+    "mcpServers": {
+        "laravel-boost": {
+            "command": "wsl.exe",
+            "args": [
+                "/home/v25050017/.local/share/mise/installs/php/8.3.32/bin/php",
+                "/home/v25050017/project/laravel/DAR/SmartReport/artisan",
+                "boost:mcp"
+            ]
+        }
+    }
+}
