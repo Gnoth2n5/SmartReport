@@ -1,86 +1,76 @@
-# Kế Hoạch Triển Khai SmartReport (DAR Next-Gen): Laravel + Filament + Multi-DB (SQL Server, PostgreSQL, Oracle) + DuckDB
+# Kế Hoạch Triển Khai SmartReport (DAR Next-Gen): Laravel 13 + Filament 5 + Multi-DB (SQL Server, PostgreSQL, Oracle) + DuckDB 2.0
 
-> **Mục tiêu**: Xây dựng ứng dụng **SmartReport** tại `/home/v25050017/project/laravel/DAR/SmartReport` bằng **Laravel + Filament + DuckDB 2.0**:
-> - **SQLite nội bộ (`database/database.sqlite`)**: Lưu toàn bộ cấu hình hệ thống, danh sách kết nối DB, phân quyền Menu/Role và các định nghĩa Custom View SQL.
-> - **3 Hệ quản trị DB đích được phép kết nối**: **SQL Server (`sqlsrv`)**, **PostgreSQL (`pgsql`)**, và **Oracle (`oracle`)** — kết nối trực tiếp qua các native extensions của DuckDB 2.0 (`mssql`, `postgres`, `oracle_scanner`) mà không phụ thuộc driver PDO/ODBC rời trên máy chủ.
-> - **Không dùng lại các câu SQL cũ của DAR**: Tận dụng 2 container PostgreSQL đang chạy sẵn trên WSL (`etl_postgres:5432`, `dev-postgres:5433`) và khởi tạo thêm container Docker cho **SQL Server 2022** (`1433`) và **Oracle 23ai Free** (`1521`) để kiểm thử đa dạng các kiểu `SELECT` (Single-DB, Multi-DB `UNION ALL`, Cross-Engine 2-DB `JOIN`, 3-Way Federation `Oracle + SQL Server + PostgreSQL`, và Native Dialect Passthrough).
-> - **Nâng cấp bộ Export**: Xuất chính xác 2 định dạng chuẩn công nghiệp là **Excel thật (`.xlsx` OpenXML qua DuckDB `excel` extension)** và **CSV chuẩn UTF-8 BOM (`.csv`)**, hỗ trợ tự động chia nhỏ file và nén `.zip` khi dữ liệu lớn.
+> **Trạng thái nền tảng (Đã cài đặt & kiểm chứng sẵn sàng)**:
+> - **Framework**: Laravel 13.42 + Filament 5.11 + Livewire 4.4 + Laravel Boost 2.10 đã được cài đặt tại `/home/v25050017/project/laravel/DAR/SmartReport`.
+> - **SQLite Config Store**: `database/database.sqlite` lưu cấu hình hệ thống, danh sách kết nối DB, phân quyền Menu/Role và các câu lệnh SQL của Custom View.
+> - **DuckDB 2.0 Engine**: Đã cài tại `duckdb` (global `PATH`) & `storage/bin/duckdb` cùng 4 extensions: `postgres`, `mssql` (native TDS 7.4), `oracle_scanner` (native TNS/TTC), và `excel` (OpenXML `.xlsx`). *(Lưu ý: luôn gọi `duckdb -batch -light-mode` để tránh chờ 5s đọc màu terminal).*
+> - **Hệ thống 4 Database Đích Đang Chạy Sẵn (`docker-db` & WSL)**:
+>   1. `pg_north`: PostgreSQL 16 (`etl_postgres`, `127.0.0.1:5432`, DB `source_db`, User `etl_user` / `etl_password`)
+>   2. `pg_south`: PostgreSQL 16 (`dev-postgres`, `127.0.0.1:5433`, DB `app`, User `app` / `app`)
+>   3. `mssql_erp`: SQL Server 2022 (`dev-mssql`, `127.0.0.1:1433`, DB `erp_production`, User `sa` / `DevPassword!123`)
+>   4. `oracle_hr`: Oracle 23ai Free (`dev-oracle`, `127.0.0.1:1521`, Service `FREEPDB1`, User `app` / `app`)
+> - **Skills & Agent Rules**: Đã loại bỏ 34 skill thừa của dự án cũ, giữ lại đúng **9 skills tinh gọn** tại `.agents/skills/` và cấu hình đầy đủ trong [AGENTS.md](../../AGENTS.md).
 
 ---
 
-## 1. Quy Tắc Điều Phối `/teamwork` (Swarm Execution & Subagent Reuse)
+## 1. Quy Tắc Điều Phối `/teamwork`, Áp Dụng Skill & Tái Sử Dụng Subagent
 
 Khi chạy lệnh `/teamwork` dựa trên kế hoạch này, **Coordinator** bắt buộc tuân thủ các nguyên tắc sau:
 
-### 1.1. Roster Agent Tinh Gọn & Tái Sử Dụng (Subagent Reuse)
-Không tạo mới rồi `kill` subagent/worker qua từng bước nhỏ. Khởi tạo **4 worker chuyên trách** và **tái sử dụng xuyên suốt 6 Cụm công việc (Clusters)** bằng cách giao việc tiếp qua `@tên-worker` trên message board (hoặc `send_message`):
+### 1.1. Roster 4 Worker Chuyên Trách, Tái Sử Dụng & Áp Dụng Đúng Skill
+Không tạo mới rồi `kill` subagent/worker qua từng bước nhỏ. Khởi tạo **4 worker chuyên trách**, yêu cầu mỗi worker đọc `AGENTS.md` + kích hoạt đúng các **Skills** được phân công trong `.agents/skills/`, và **tái sử dụng xuyên suốt 6 Cụm công việc** qua `@tên-worker`:
 
-| Tên Worker (`name`) | Vai trò xuyên suốt | Tái sử dụng ở các Cụm |
-| :--- | :--- | :--- |
-| `engine` | Phụ trách khởi tạo Laravel + SQLite config DB, Docker DBs (`mssql`, `oracle` + kết nối `postgres` có sẵn), cài đặt DuckDB 2.0 + extensions (`postgres`, `mssql`, `oracle_scanner`, `excel`), xây dựng `DuckDbReportEngine`, `SnapshotManager`, `DuckDbExporter` (`.xlsx` & `.csv`) và Unit/Integration Tests. | Cụm 1, Cụm 2, Cụm 5 |
-| `admin-ui` | Phụ trách Filament Admin Panel, Auth/RBAC, Dynamic Sidebar Navigation, `DataSourceResource` (chỉ cho phép 3 loại: `sqlsrv`, `pgsql`, `oracle`), `MenuGroupResource`, `RolePermissionResource`, `CustomViewResource` (Builder + Auto-detect `@param` + Test SQL 10 dòng). | Cụm 3, Cụm 4 |
-| `report-ui` | Phụ trách trang chạy báo cáo động `ReportRunnerPage` (Multi-DB Selector, 3-Tab Header: `Tổng quan` / `Application Information` / `SQL Query`, phân trang 10 dòng từ DuckDB Snapshot) và `SqlExportPage` (xuất `.xlsx` / `.csv` + chia part `.zip`). | Cụm 4, Cụm 5 |
-| `verifier` | Phụ trách kiểm tra độc lập từng Cụm (chạy PHPUnit/Artisan test, kiểm tra cấu trúc file `.xlsx`/`.csv`, kiểm tra `git status`/`git diff`) và chạy **Playwright CLI / Chrome MCP E2E Tests** trên trình duyệt thật ở Cụm 6. | Cụm 1 $\rightarrow$ Cụm 6 |
+| Tên Worker (`name`) | Skills Bắt Buộc Kích Hoạt (`.agents/skills/<skill>/SKILL.md`) | Vai trò xuyên suốt | Tái sử dụng ở các Cụm |
+| :--- | :--- | :--- | :--- |
+| `engine` | `laravel-best-practices` + `security-best-practices` + `security-threat-model` | Phụ trách DB Migrations (SQLite), nạp dữ liệu mẫu lên 4 DB (`pg_north`, `pg_south`, `mssql_erp`, `oracle_hr`), xây dựng `DuckDbSourceAdapter`, `DuckDbReportEngine`, `SnapshotManager`, `DuckDbExporter` (`.xlsx` & `.csv` + `.zip`). | Cụm 1, Cụm 2, Cụm 5 |
+| `admin-ui` | `laravel-best-practices` + `tailwindcss-development` + `security-best-practices` | Phụ trách Filament Admin Panel, RBAC, Dynamic Sidebar Navigation, `DataSourceResource` (chỉ cho phép 3 loại: `sqlsrv`, `pgsql`, `oracle`), `MenuGroupResource`, `RolePermissionResource`, `CustomViewResource` (Builder + Auto-detect `@param` + Test SQL 10 dòng). | Cụm 3, Cụm 4 |
+| `report-ui` | `laravel-best-practices` + `tailwindcss-development` | Phụ trách trang chạy báo cáo động `ReportRunnerPage` (Multi-DB Selector, 3-Tab Header: `Tổng quan` / `Application Information` / `SQL Query`, phân trang 10 dòng từ DuckDB Snapshot) và `SqlExportPage` (xuất `.xlsx` / `.csv` + chia part `.zip`). | Cụm 4, Cụm 5 |
+| `verifier` | `testing-best-practices` + `phpunit-skill` + `playwright-cli` | Phụ trách kiểm tra độc lập từng Cụm (`php artisan test`, `vendor/bin/pint --dirty --format agent`, kiểm tra binary `.xlsx`/`.csv`, `git status`) và chạy **Playwright CLI / Chrome MCP E2E Tests** trên trình duyệt thật ở Cụm 6. | Cụm 1 $\rightarrow$ Cụm 6 |
 
 > [!IMPORTANT]
-> **Quy tắc tránh xung đột file**: Ở mỗi Cụm công việc, các file được phân chia rõ theo allowlist cho từng worker. Hai worker không bao giờ sửa chung 1 file tại cùng một thời điểm.
+> - Nếu một worker cần chia nhỏ tác vụ cho model nhỏ (`local-8b`/`qwen-8b`), bắt buộc kích hoạt thêm skill `small-agent-task-compiler`.
+> - Hai worker không bao giờ sửa chung 1 file tại cùng một thời điểm.
 
 ### 1.2. Cổng Kiểm Duyệt & Git Commit Bắt Buộc Sau Mỗi Cụm Công Việc (Commit Gate)
 Mỗi Cụm công việc (Work Cluster) chỉ được coi là hoàn tất (`[done]`) khi:
-1. Toàn bộ lệnh kiểm thử (Acceptance Checks) của Cụm đó chạy `PASS` (0 lỗi, 0 test bị skip).
-2. `verifier` xác nhận kết quả trên board.
-3. Thực hiện **Git Commit** ngay tại `/home/v25050017/project/laravel/DAR/SmartReport` theo đúng chuẩn Conventional Commits ở cuối mỗi Cụm, đảm bảo `git status --short` sạch hoàn toàn trước khi chuyển sang Cụm tiếp theo.
+1. Chạy `vendor/bin/pint --dirty --format agent` để chuẩn hóa code style.
+2. Toàn bộ lệnh kiểm thử (Acceptance Checks) của Cụm đó chạy `PASS` (0 lỗi, 0 test bị skip).
+3. `verifier` xác nhận kết quả trên board.
+4. Thực hiện **Git Commit** ngay tại `/home/v25050017/project/laravel/DAR/SmartReport` theo đúng chuẩn Conventional Commits ở cuối mỗi Cụm, đảm bảo `git status --short` sạch hoàn toàn trước khi chuyển sang Cụm tiếp theo.
 
 ---
 
-## 2. Kiến Trúc Tổng Thể & 4 Kiểu Truy Vấn Đa Nguồn
+## 2. Kiến Trúc Kết Nối DuckDB 2.0 & 4 Kiểu `SELECT` Đa Nguồn
 
-```mermaid
-flowchart LR
-    subgraph AppConfig["SQLite Config DB (database.sqlite)"]
-        CfgTables["users | data_sources\nmenu_groups | role_permissions\ncustom_views (SQL & Filters)"]
-    end
+### 2.1. Cú Pháp Kết Nối 3 Hệ Quản Trị Trong DuckDB 2.0 (Đã Kiểm Chứng Thực Tế)
+Luôn gọi `duckdb -batch -light-mode`:
+1. **PostgreSQL (`pgsql`)**:
+   - Attach: `LOAD postgres; ATTACH 'host=127.0.0.1 port=5432 user=etl_user password=etl_password dbname=source_db' AS pg_north (TYPE postgres, READ_ONLY);`
+   - Truy vấn bảng: `SELECT * FROM pg_north.public.v_epcontract`
+   - Truy vấn passthrough SQL gốc: `SELECT * FROM postgres_query('pg_north', 'SELECT ...')`
+2. **SQL Server (`sqlsrv`)**:
+   - Attach: `LOAD mssql; ATTACH 'Server=127.0.0.1,1433;Database=erp_production;User Id=sa;Password=DevPassword!123;TrustServerCertificate=yes' AS mssql_erp (TYPE mssql);`
+   - Truy vấn bảng: `SELECT * FROM mssql_erp.dbo.production_orders`
+   - Truy vấn passthrough T-SQL gốc: `SELECT * FROM mssql_scan('mssql_erp', 'SELECT ...')`
+3. **Oracle (`oracle`)**:
+   - Secret & Attach:
+     ```sql
+     LOAD oracle_scanner;
+     CREATE SECRET __sec_oracle_hr (TYPE oracle, DSN '127.0.0.1:1521/FREEPDB1', USER 'app', PASSWORD 'app');
+     ATTACH '__sec_oracle_hr' AS oracle_hr (TYPE oracle_scanner);
+     ```
+   - Truy vấn bảng: `SELECT * FROM oracle_hr.APP.EMPLOYEES`
+   - Truy vấn passthrough Oracle SQL gốc: `SELECT * FROM oracle_query('__sec_oracle_hr', 'SELECT ...')`
 
-    subgraph UI["Laravel + Filament UI"]
-        Builder["CustomViewResource\n(SQL + @Param Detector + 10-Row Preview)"]
-        Sources["DataSourceResource\n(Driver: sqlsrv | pgsql | oracle)"]
-        Runner["ReportRunnerPage\n(Multi-DB Selector + 3-Tab UI + 10-Row Grid)"]
-        Exporter["DuckDbExporter & SqlExportPage\n(Real .xlsx OpenXML & UTF-8 .csv + Split .zip)"]
-    end
-
-    subgraph DuckDB["DuckDB 2.0 Engine & Extensions"]
-        Ext["Extensions:\n- postgres (Core)\n- mssql (Community TDS)\n- oracle_scanner (Community TNS)\n- excel (Core XLSX)"]
-        Snapshot["Snapshot Storage\n(storage/app/snapshots/*.duckdb)"]
-    end
-
-    subgraph WSL_DBs["WSL / Docker Enterprise Databases"]
-        PG1[("PostgreSQL #1 (etl_postgres:5432)\ndb: source_db (Plant North)")]
-        PG2[("PostgreSQL #2 (dev-postgres:5433)\ndb: app (Plant South)")]
-        MSSQL[("SQL Server 2022 (Docker:1433)\ndb: erp_production")]
-        ORA[("Oracle 23ai Free (Docker:1521)\nservice: FREEPDB1 (HR & Finance)")]
-    end
-
-    CfgTables <--> UI
-    Builder --> Ext
-    Runner --> Ext
-    Ext -->|ATTACH TYPE postgres / postgres_query| PG1
-    Ext -->|ATTACH TYPE postgres / postgres_query| PG2
-    Ext -->|ATTACH TYPE mssql| MSSQL
-    Ext -->|ATTACH TYPE oracle_scanner / oracle_query| ORA
-    Ext -->|Materialize & Lock External Access| Snapshot
-    Snapshot -->|LIMIT 11 OFFSET k (10 rows/page)| Runner
-    Snapshot -->|COPY TO FORMAT xlsx / csv| Exporter
-```
-
-### 4 Kiểu `SELECT` Lên Các Loại DB Được Thiết Kế & Kiểm Thử
+### 2.2. Bốn Kiểu `SELECT` Lên Các Loại DB Được Thiết Kế & Kiểm Thử (Không Dùng SQL Cũ Của DAR)
 1. **Kiểu 1 — Single-DB Select (Truy vấn đơn nguồn trên từng loại DB: `pgsql`, `sqlsrv`, `oracle`)**:
-   - Truy vấn trực tiếp qua catalog đã `ATTACH` (VD: `SELECT * FROM db.schema.table WHERE ...`) hoặc qua hàm **Native SQL Passthrough** (`postgres_query`, `oracle_query`) có bind tham số `@param`.
+   - Chạy qua bảng `ATTACH` hoặc hàm passthrough (`postgres_query`, `mssql_scan`, `oracle_query`) có bind tham số `@param`.
 2. **Kiểu 2 — Multi-DB Selector `UNION ALL` (Chọn nhiều DB cùng cấu trúc trên giao diện)**:
-   - Ví dụ: Báo cáo hợp đồng & sản lượng cho phép chọn 1 hoặc gộp cả 2 DB PostgreSQL (`pg_north` tại cổng `5432` và `pg_south` tại cổng `5433`), tự động gắn cột `_source_db` để so sánh/hiển thị chung trên 1 lưới dữ liệu.
+   - Ví dụ: Báo cáo hợp đồng xuất khẩu cho phép chọn 1 hoặc gộp cả 2 DB PostgreSQL (`pg_north` cổng `5432` và `pg_south` cổng `5433`), tự động gắn cột `_source_db` để hiển thị chung trên 1 bảng.
 3. **Kiểu 3 — Cross-Engine 2-DB `JOIN` (Nối dữ liệu giữa 2 hệ quản trị khác loại)**:
-   - Ví dụ: Lấy danh sách Nhân sự & Bậc lương từ **Oracle (`ora_hr`)** `JOIN` với Nhật ký Lệnh sản xuất & Giờ công máy từ **SQL Server (`mssql_erp`)**.
+   - Ví dụ: Lấy bảng Nhân sự & Bậc lương từ **Oracle (`oracle_hr`)** `JOIN` với bảng Lệnh sản xuất & Giờ công máy từ **SQL Server (`mssql_erp`)**.
 4. **Kiểu 4 — 3-Way Enterprise Federation (`Oracle` + `SQL Server` + `PostgreSQL` CTE / Aggregation)**:
-   - Truy vấn tổng hợp sử dụng CTE (`WITH ...`) kết hợp dữ liệu từ cả 3 hệ quản trị: Nhân sự/Phòng ban (**Oracle**) + Lệnh sản xuất (**SQL Server**) + Hợp đồng xuất hàng (**PostgreSQL North & South**), lọc theo `@StartDate`, `@EndDate`, `@Plant`, `@DeptCode`.
+   - Truy vấn tổng hợp CTE (`WITH ...`) kết hợp dữ liệu từ cả 3 hệ quản trị: Nhân sự/Phòng ban (**Oracle**) + Lệnh sản xuất (**SQL Server**) + Hợp đồng xuất hàng (**PostgreSQL North & South**), lọc theo `@StartDate`, `@EndDate`, `@Plant`, `@DeptCode`.
 
 ---
 
@@ -88,118 +78,81 @@ flowchart LR
 
 ---
 
-### Cụm 1: Khởi Tạo Git, Laravel + SQLite Config, Cài Đặt DuckDB 2.0 + Extensions & Môi Trường Multi-DB (Postgres, SQL Server, Oracle)
-**Worker phụ trách**: `engine` | **Verifier**: `verifier`
+### Cụm 1: Thiết Lập Schema SQLite, Seed Dữ Liệu Thật Lên 4 DB (`Postgres`, `SQL Server`, `Oracle`) & Khởi Tạo Git
+**Worker phụ trách**: `engine` (Skills: `laravel-best-practices`, `security-best-practices`) | **Verifier**: `verifier`
 
 #### Mục tiêu
-1. Khởi tạo Git repository tại `/home/v25050017/project/laravel/DAR/SmartReport`.
-2. Khởi tạo Laravel + Filament sử dụng **SQLite (`database/database.sqlite`)** để lưu cấu hình ứng dụng, danh sách nguồn DB, phân quyền và các câu lệnh SQL của Custom View.
-3. Cài đặt **DuckDB 2.0 CLI** vào `storage/bin/duckdb` và cài sẵn 4 extensions: `postgres` (core), `excel` (core), `mssql` (community), `oracle_scanner` (community).
-4. Tận dụng 2 container PostgreSQL có sẵn trong WSL (`etl_postgres` cổng `5432`, `dev-postgres` cổng `5433`) và khởi tạo `docker-compose.test-dbs.yml` cho **SQL Server 2022** (cổng `1433`) và **Oracle 23ai Free** (cổng `1521`), nạp dữ liệu mẫu phong phú (tiếng Việt Unicode, số thập phân `NUMERIC(18,2)`, ngày giờ `TIMESTAMP`, `NULL`) trên cả 4 database thuộc 3 hệ quản trị.
+1. Đảm bảo Git repository tại `/home/v25050017/project/laravel/DAR/SmartReport` sạch sẽ.
+2. Tạo cấu hình `config/smartreport.php` và các Migrations trên SQLite (`database/database.sqlite`) cho `data_sources`, `menu_groups`, `role_permissions`, `custom_views`, và phân quyền trên `users`.
+3. Dùng chính DuckDB 2.0 (hoặc client CLI trong container) khởi tạo schema + nạp dữ liệu mẫu phong phú (tiếng Việt Unicode, `NUMERIC(18,2)`, `TIMESTAMP`, `NULL`) lên cả 4 DB đang chạy trong `docker-db` (`pg_north:5432`, `pg_south:5433`, `mssql_erp:1433`, `oracle_hr:1521`).
+4. Seed 4 `DataSource`, các nhóm Menu, Roles, và **5 Custom Views mẫu đại diện cho 4 kiểu `SELECT`** vào `database/database.sqlite`.
 
 #### Các bước thực hiện & Files
-1. **[NEW] Khởi tạo Git & Laravel + Filament Project tại `/home/v25050017/project/laravel/DAR/SmartReport`**:
-   - Giữ nguyên `.agents/`, `.planning/`, `FEASIBILITY.md`.
-   - Cấu hình `.env` sử dụng `DB_CONNECTION=sqlite` (`database/database.sqlite`) cho toàn bộ bảng cấu hình của SmartReport.
-   - Cấu hình `.gitignore` (bỏ qua `/vendor`, `/node_modules`, `/storage/app/snapshots/*.duckdb`, `/storage/app/exports/*`, `/storage/bin/duckdb`, `.playwright-cli`).
-2. **[NEW] `scripts/install-duckdb.sh` & `config/smartreport.php`**:
-   - Tải DuckDB v2.0.0 CLI (`duckdb_cli-linux-amd64.zip`) vào `storage/bin/duckdb` và chạy lệnh cài đặt sẵn các extensions:
-     ```sql
-     INSTALL postgres;
-     INSTALL excel;
-     INSTALL mssql FROM community;
-     INSTALL oracle_scanner FROM community;
-     ```
-   - Cấu hình `config/smartreport.php`:
-     - `allowed_drivers`: `['sqlsrv' => 'SQL Server', 'pgsql' => 'PostgreSQL', 'oracle' => 'Oracle']` (chỉ cho phép đúng 3 loại DB kết nối theo yêu cầu).
-     - `duckdb_binary`: `storage_path('bin/duckdb')`.
-     - `snapshot_dir`: `storage_path('app/snapshots')`, `snapshot_ttl_minutes`: `30`, `page_size`: `10`.
-3. **[NEW] `docker-compose.test-dbs.yml` & `scripts/setup-test-databases.sh`**:
-   - Khai báo và khởi chạy 2 container bổ sung bên cạnh 2 container Postgres đang chạy sẵn (`etl_postgres:5432`, `dev-postgres:5433`):
-     - `smartreport_mssql`: `mcr.microsoft.com/mssql/server:2022-latest` (Port `1433`, User `sa`, Pass `SmartReport!2026`, DB `erp_production`).
-     - `smartreport_oracle`: `gvenzl/oracle-free:23-slim-faststart` (Port `1521`, Service `FREEPDB1`, User `hr_user`, Pass `hr_password`).
-   - Script `scripts/setup-test-databases.sh` nạp dữ liệu mẫu đồng bộ giữa các DB để test 4 kiểu SELECT:
-     - **PostgreSQL #1 (`etl_postgres:5432`, db `source_db` — Plant `NORTH`)**: Bảng `v_epcontract` & `v_epcontract_detail` (25 hợp đồng & chi tiết lô hàng của nhà máy miền Bắc).
-     - **PostgreSQL #2 (`dev-postgres:5433`, db `app` — Plant `SOUTH`)**: Bảng `v_epcontract` & `v_epcontract_detail` (20 hợp đồng & chi tiết lô hàng của nhà máy miền Nam).
-     - **SQL Server (`smartreport_mssql:1433`, db `erp_production`)**: Bảng `dbo.production_orders` (lệnh sản xuất gắn với `contractno`, `plant`, `emp_no`, `machine_code`, `output_qty`, `defect_qty`, `shift_date`) và `dbo.machine_logs` (35 bản ghi).
-     - **Oracle (`smartreport_oracle:1521/FREEPDB1`, schema `HR_USER`)**: Bảng `HR_USER.EMPLOYEES` (`EMP_NO`, `FULL_NAME`, `DEPT_CODE`, `PLANT`, `BASE_SALARY`, `HIRE_DATE`, `STATUS`) và `HR_USER.DEPARTMENTS` (`DEPT_CODE`, `DEPT_NAME`, `COST_CENTER`) (30 nhân viên).
-4. **[NEW] Migrations & `database/seeders/SmartReportSeeder.php` trên SQLite**:
-   - Tạo các bảng cấu hình trong `database/database.sqlite`:
-     - `data_sources`: `code`, `name`, `driver` (`enum: sqlsrv, pgsql, oracle`), `host`, `port`, `database_name`, `service_name`, `username`, `password` (encrypted), `default_schema`, `options` (json), `is_read_only` (default `true`), `is_active` (default `true`).
-     - `menu_groups`: `group_code`, `title`, `icon`, `sort_order`, `roles` (json), `is_active`.
-     - `role_permissions`: `role_code`, `role_name`, `description`, `is_system`, `allowed_groups` (json), `allowed_views` (json), `allowed_sources` (json).
-     - `custom_views`: `view_code`, `view_name`, `menu_group_code`, `execution_mode` (`single_or_union` | `federated_join`), `allowed_sources` (json), `default_sources` (json), `source_queries` (json), `sql_text`, `filters` (json), `roles` (json), `description`, `version`, `is_active`.
-   - Seed 4 `DataSource` (`pg_north`, `pg_south`, `mssql_erp`, `oracle_hr`), các nhóm Menu (`contracts`, `production`, `hr_finance`, `federated_bi`, `admin`), Roles (`Admin`, `Analyst`, `PlantManager`), và **5 Custom Views mẫu đại diện cho các kiểu SELECT khác nhau** (không dùng SQL của DAR cũ):
-     1. `pg-multi-plant-contracts`: Chế độ `single_or_union` trên `[pg_north, pg_south]` — cho phép chọn 1 hoặc cả 2 DB PostgreSQL để xem & gộp hợp đồng (`v_epcontract` JOIN `v_epcontract_detail`).
-     2. `mssql-production-orders`: Truy vấn SQL Server (`mssql_erp`) lọc theo `@StartDate`, `@EndDate`, `@Plant`, `@MachineCode`.
-     3. `oracle-hr-directory`: Truy vấn Oracle (`oracle_hr`) lấy danh sách nhân sự & quỹ lương theo `@DeptCode`, `@Plant`.
-     4. `join-oracle-mssql-productivity`: Chế độ `federated_join` nối bảng Nhân sự từ **Oracle (`oracle_hr`)** với bảng Lệnh sản xuất từ **SQL Server (`mssql_erp`)** theo `EMP_NO`.
-     5. `federated-3way-executive-report`: Chế độ `federated_join` kết hợp cả **3 hệ quản trị (`PostgreSQL` + `SQL Server` + `Oracle`)** tính tổng sản lượng, giá trị hợp đồng và nhân sự phụ trách theo từng lô hàng.
+1. **[NEW] `config/smartreport.php`**:
+   - `allowed_drivers`: `['sqlsrv' => 'SQL Server', 'pgsql' => 'PostgreSQL', 'oracle' => 'Oracle']`.
+   - `duckdb_binary`: `env('DUCKDB_BINARY', 'duckdb')` (fallback `storage_path('bin/duckdb')`).
+   - `snapshot_dir`: `storage_path('app/snapshots')`, `snapshot_ttl_minutes`: `30`, `page_size`: `10`.
+2. **[NEW] Migrations & Models (`DataSource`, `MenuGroup`, `RolePermission`, `CustomView`, `User`)**:
+   - `data_sources`: `code` (unique), `name`, `driver` (`sqlsrv|pgsql|oracle`), `host`, `port`, `database_name`, `service_name`, `default_schema`, `username`, `password` (encrypted cast), `options` (json), `is_read_only` (bool), `is_active` (bool).
+   - `menu_groups`: `group_code` (unique), `title`, `icon`, `sort_order`, `roles` (json), `is_active` (bool).
+   - `role_permissions`: `role_code` (unique), `role_name`, `description`, `is_system` (bool), `allowed_groups` (json), `allowed_views` (json), `allowed_sources` (json).
+   - `custom_views`: `view_code` (unique), `view_name`, `menu_group_code`, `execution_mode` (`single_or_union` | `federated_join`), `allowed_sources` (json), `default_sources` (json), `source_queries` (json), `sql_text`, `filters` (json), `roles` (json), `description`, `version`, `is_active` (bool).
+3. **[NEW] `app/Services/Database/ExternalTestDatabaseProvisioner.php` & `database/seeders/SmartReportSeeder.php`**:
+   - Tự động khởi tạo bảng và dữ liệu mẫu trên 4 DB Docker:
+     - **PostgreSQL #1 (`pg_north`, `127.0.0.1:5432`, db `source_db`)**: Bảng `public.v_epcontract` & `public.v_epcontract_detail` (25 hợp đồng nhà máy `NORTH`).
+     - **PostgreSQL #2 (`pg_south`, `127.0.0.1:5433`, db `app`)**: Bảng `public.v_epcontract` & `public.v_epcontract_detail` (20 hợp đồng nhà máy `SOUTH`).
+     - **SQL Server (`mssql_erp`, `127.0.0.1:1433`, db `erp_production`)**: Bảng `dbo.production_orders` (`order_no`, `contractno`, `plant`, `emp_no`, `machine_code`, `output_qty`, `defect_qty`, `unit_cost`, `shift_date`) & `dbo.machine_logs` (35 dòng).
+     - **Oracle (`oracle_hr`, `127.0.0.1:1521/FREEPDB1`, schema `APP`)**: Bảng `APP.EMPLOYEES` (`EMP_NO`, `FULL_NAME`, `DEPT_CODE`, `PLANT`, `BASE_SALARY`, `HIRE_DATE`, `STATUS`) & `APP.DEPARTMENTS` (`DEPT_CODE`, `DEPT_NAME`, `COST_CENTER`) (30 nhân viên).
+   - Seed 5 Custom Views mẫu vào SQLite:
+     1. `pg-multi-plant-contracts` (`single_or_union` trên `[pg_north, pg_south]`): Gộp hợp đồng 2 nhà máy Bắc & Nam.
+     2. `mssql-production-orders` (`single_or_union` trên `[mssql_erp]`): Tra cứu lệnh sản xuất trên SQL Server.
+     3. `oracle-hr-directory` (`single_or_union` trên `[oracle_hr]`): Tra cứu nhân sự & lương trên Oracle.
+     4. `join-oracle-mssql-productivity` (`federated_join` nối `oracle_hr` + `mssql_erp`): Hiệu suất sản xuất theo nhân viên & phòng ban.
+     5. `federated-3way-executive-report` (`federated_join` nối `pg_north` + `pg_south` + `mssql_erp` + `oracle_hr`): Báo cáo tổng hợp điều hành xuyên 3 hệ quản trị DB.
 
 #### Kiểm tra nghiệm thu (Acceptance Checks) & Commit Gate Cụm 1
 ```bash
-storage/bin/duckdb -c "SELECT extension_name, installed FROM duckdb_extensions() WHERE extension_name IN ('postgres', 'mssql', 'oracle_scanner', 'excel');"
-php artisan migrate:fresh --seed
-php artisan test --filter=Cluster1EnvironmentAndConnectionsTest
-git add -A && git commit -m "feat(cluster-1): setup laravel sqlite config, duckdb 2.0 extensions and postgres/mssql/oracle test databases"
+php artisan migrate:fresh --seed --no-interaction
+vendor/bin/pint --dirty --format agent
+php artisan test --filter=Cluster1EnvironmentAndSeedTest
+git add -A && git commit -m "feat(cluster-1): setup sqlite schema, provision postgres/mssql/oracle test data and seed 5 multi-db views"
 ```
 
 ---
 
 ### Cụm 2: Xây Dựng DuckDB Multi-DB Federation Engine, Snapshot Pagination & Bộ Export Chuẩn `.xlsx` / `.csv`
-**Worker phụ trách**: `engine` | **Verifier**: `verifier`
+**Worker phụ trách**: `engine` (Skills: `laravel-best-practices`, `security-best-practices`, `security-threat-model`) | **Verifier**: `verifier` (Skills: `testing-best-practices`, `phpunit-skill`)
 
 #### Mục tiêu
-Xây dựng lõi thực thi truy vấn của SmartReport qua DuckDB 2.0 hỗ trợ kết nối tới **SQL Server, PostgreSQL, Oracle**, hỗ trợ nhiều phương thức `SELECT` (Catalog Attach, Native Passthrough `postgres_query`/`oracle_query`, Multi-DB `UNION ALL`, Cross-Engine `JOIN`), cơ chế lưu Snapshot phân trang 10 dòng/trang, và nâng cấp `DuckDbExporter` xuất chính xác **Excel (`.xlsx` OpenXML)** và **CSV (`.csv` UTF-8 BOM)** (có tùy chọn chia part `.zip`).
+Xây dựng lõi thực thi truy vấn của SmartReport qua DuckDB 2.0 hỗ trợ kết nối tới **SQL Server, PostgreSQL, Oracle**, hỗ trợ cả 4 kiểu `SELECT`, cơ chế lưu Snapshot phân trang 10 dòng/trang, và nâng cấp `DuckDbExporter` xuất chính xác **Excel (`.xlsx` OpenXML)** và **CSV (`.csv` UTF-8 BOM)** (có tùy chọn chia part `.zip`).
 
 #### Các bước thực hiện & Files
 1. **[NEW] `app/Services/Sql/SqlParameterExtractor.php` & `app/Services/Sql/SqlSafetyValidator.php`**:
    - `SqlParameterExtractor`: Tự động nhận diện các tham số `@param` trong `sql_text` và `source_queries[*].sql_text`, gợi ý kiểu ô nhập (`date` với `@today`, `number`, `text`, `select`).
-   - `SqlSafetyValidator`: Đảm bảo chỉ cho phép câu lệnh đọc (`SELECT` / `WITH`), chặn mọi từ khóa DDL/DML (`INSERT`, `UPDATE`, `DELETE`, `DROP`, `ALTER`, `TRUNCATE`, `EXEC`, `COPY`, `ATTACH`, `INSTALL`, `LOAD`, `read_csv`, `read_parquet`...) trong câu SQL của người dùng.
+   - `SqlSafetyValidator`: Chỉ cho phép câu lệnh đọc (`SELECT` / `WITH`), chặn mọi từ khóa ghi/hệ thống (`INSERT`, `UPDATE`, `DELETE`, `DROP`, `ALTER`, `TRUNCATE`, `EXEC`, `COPY`, `ATTACH`, `INSTALL`, `LOAD`, `read_csv`, `read_parquet`...) trong câu SQL do user nhập.
 2. **[NEW] `app/Services/DuckDb/DuckDbSourceAdapter.php`**:
-   - Sinh lệnh kết nối an toàn trong phiên DuckDB cho 3 loại driver:
-     - **PostgreSQL (`pgsql`)**:
-       `LOAD postgres; ATTACH 'host=... port=... user=... password=... dbname=...' AS {alias} (TYPE postgres, READ_ONLY);`
-     - **SQL Server (`sqlsrv`)**:
-       `LOAD mssql; ATTACH 'Server=...,...;Database=...;User Id=...;Password=...;TrustServerCertificate=yes' AS {alias} (TYPE mssql, READ_ONLY);`
-     - **Oracle (`oracle`)**:
-       `LOAD oracle_scanner; CREATE SECRET __sec_{alias} (TYPE oracle, DSN 'host:port/service', USER '...', PASSWORD '...'); ATTACH '__sec_{alias}' AS {alias} (TYPE oracle_scanner);`
-   - Hỗ trợ **parameter binding an toàn** cho `@param`: chuyển đổi và escape giá trị thông qua `PREPARE` / literal quote chuẩn theo kiểu dữ liệu (`DATE`, `NUMERIC`, `VARCHAR`, `NULL` khi rỗng để mệnh đề `(@Param IS NULL OR col = @Param)` hoạt động trên cả 3 hệ DB).
-   - Hỗ trợ cả 2 cách đọc dữ liệu từ nguồn vào bảng tạm DuckDB (`CREATE TEMP TABLE src_{alias} AS ...`):
-     - Cách A: Truy vấn qua catalog đã `ATTACH` (`SELECT ... FROM {alias}.{schema}.{table}`).
-     - Cách B: Truy vấn passthrough bằng dialect gốc của DB đích (`postgres_query('{alias}', '...')`, `oracle_query('__sec_{alias}', '...')`, hoặc subquery trên `{alias}` của `mssql`).
+   - Sinh lệnh `ATTACH` / `CREATE SECRET` và thực thi truy vấn đọc dữ liệu cho 3 loại driver (`pgsql`, `sqlsrv`, `oracle`).
+   - Hỗ trợ bind tham số `@param` an toàn (bao gồm xử lý `@today` và giá trị `NULL` cho mệnh đề `(@Param IS NULL OR col = @Param)`).
+   - Hỗ trợ cả truy vấn qua bảng `ATTACH` (`{alias}.{schema}.{table}`) lẫn truy vấn passthrough (`postgres_query`, `mssql_scan`, `oracle_query`).
 3. **[NEW] `app/Services/DuckDb/DuckDbReportEngine.php` & `app/Services/DuckDb/SnapshotManager.php`**:
    - **Tạo Snapshot (`executeAndCreateSnapshot`)**:
-     1. Sau khi đọc dữ liệu từ các DB nguồn được chọn (`pg_north`, `pg_south`, `mssql_erp`, `oracle_hr`) vào các bảng staging trong phiên DuckDB, thực hiện `DETACH` các DB nguồn và khóa truy cập ngoài:
-        `SET enable_external_access = false;`
-     2. Chạy câu lệnh tổng hợp (`UNION ALL` kèm cột `_source_db` cho chế độ `single_or_union`, hoặc câu lệnh `federation_sql` cho chế độ `federated_join`) và ghi xuống bảng `report_result` (có cột thứ tự `__row_id`) cùng bảng `report_meta` trong file `storage/app/snapshots/{snapshotId}.duckdb`.
+     1. Đọc dữ liệu từ các DB nguồn được chọn vào bảng tạm trong phiên DuckDB, sau đó `DETACH` các DB nguồn và khóa truy cập ngoài (`SET enable_external_access = false;`).
+     2. Chạy câu lệnh tổng hợp (`UNION ALL` kèm cột `_source_db` cho `single_or_union`, hoặc câu lệnh `federated_join`) lưu vào bảng `report_result` (có cột `__row_id`) và `report_meta` trong file `storage/app/snapshots/{snapshotId}.duckdb`.
    - **Đọc phân trang (`getPage(string $snapshotId, int $page, int $perPage = 10)`)**:
-     - Mở file `{snapshotId}.duckdb` ở chế độ `READ_ONLY`, lấy `LIMIT 11 OFFSET ?` (hiển thị 10 dòng, dòng thứ 11 xác nhận có trang tiếp theo) + `total_rows` từ `report_meta`.
-     - Chuyển trang hoàn toàn không gọi lại PostgreSQL, SQL Server hay Oracle!
-4. **[NEW] `app/Services/Export/DuckDbExporter.php` (Nâng cấp chuẩn `.xlsx` và `.csv`)**:
-   - **Xuất Excel chuẩn `.xlsx` (`exportExcel`)**:
-     - Sử dụng extension `excel` chính thức của DuckDB 2.0:
-       ```sql
-       LOAD excel;
-       COPY (SELECT * EXCLUDE (__row_id) FROM report_result ORDER BY __row_id)
-       TO '/path/to/file.xlsx' WITH (FORMAT xlsx, HEADER true, SHEET 'SmartReport');
-       ```
-     - File sinh ra là **OpenXML `.xlsx` thật 100%** (binary ZIP chứa `xl/workbook.xml`, `xl/worksheets/sheet1.xml`, giữ chuẩn kiểu số `NUMERIC`, ngày tháng và tiếng Việt), trả về header `Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`.
-   - **Xuất CSV chuẩn UTF-8 BOM (`exportCsv`)**:
-     - Sử dụng `COPY (SELECT * EXCLUDE (__row_id) FROM report_result ORDER BY __row_id) TO '/path/to/file.csv' WITH (FORMAT csv, HEADER true, DELIMITER ',')`, chèn BOM `\xEF\xBB\xBF` ở đầu file để mở bằng Excel không lỗi tiếng Việt, trả về header `Content-Type: text/csv; charset=UTF-8`.
-   - **Hỗ trợ Chia nhỏ file (`.zip`) cho cả `.xlsx` và `.csv`**:
-     - Khi bật `splitFile = true` và `totalRows > splitRows`, tự động xuất từng phân đoạn (`LIMIT {splitRows} OFFSET {offset}`) thành các file `_part1.xlsx`, `_part2.xlsx` (hoặc `_part1.csv`, `_part2.csv`) và nén thành 1 file `.zip`.
+     - Đọc trực tiếp từ file `{snapshotId}.duckdb` (`LIMIT 11 OFFSET ?` để trả 10 dòng + cờ `hasNextPage` + `totalRows` từ `report_meta`). Không gọi lại PostgreSQL / SQL Server / Oracle khi chuyển trang!
+4. **[NEW] `app/Services/Export/DuckDbExporter.php` (Chuẩn `.xlsx` OpenXML và `.csv` UTF-8 BOM)**:
+   - **Excel chuẩn `.xlsx` (`exportExcel`)**:
+     - Dùng core extension `excel` của DuckDB 2.0:
+       `LOAD excel; COPY (SELECT * EXCLUDE (__row_id) FROM report_result ORDER BY __row_id) TO '/path/file.xlsx' WITH (FORMAT xlsx, HEADER true, SHEET 'SmartReport');`
+   - **CSV chuẩn UTF-8 BOM (`exportCsv`)**:
+     - Dùng `COPY (...) TO '/path/file.csv' WITH (FORMAT csv, HEADER true, DELIMITER ',')` + tiền tố BOM `\xEF\xBB\xBF`.
+   - **Chia nhỏ file (`.zip`) cho cả `.xlsx` và `.csv`**:
+     - Khi `splitFile = true` và `totalRows > splitRows`, tự động chia thành `_part1.xlsx`, `_part2.xlsx` (hoặc `_part1.csv`, `_part2.csv`) và nén thành `.zip`.
 
 #### Kiểm tra nghiệm thu (Acceptance Checks) & Commit Gate Cụm 2
-Viết bộ test toàn diện tại `tests/Feature/MultiDbEngineAndExporterTest.php` kiểm chứng trực tiếp trên các DB thật:
-- Test Kiểu 1 (Single-DB): Chạy `SELECT` trên từng loại DB (`PostgreSQL`, `SQL Server`, `Oracle`) trả về đúng số dòng và kiểu dữ liệu.
-- Test Kiểu 2 (Multi-DB `UNION ALL`): Chọn `pg_north` (25 dòng) vs Chọn `pg_north` + `pg_south` (45 dòng, có cột `_source_db`).
-- Test Kiểu 3 (2-Way Cross-Engine `JOIN`): `JOIN` giữa `Oracle` (`HR_USER.EMPLOYEES`) và `SQL Server` (`dbo.production_orders`).
-- Test Kiểu 4 (3-Way Enterprise Federation): `JOIN` cả 3 hệ quản trị `Oracle` + `SQL Server` + `PostgreSQL` trong cùng 1 báo cáo.
-- Test Snapshot Pagination: Phân trang 10 dòng/trang đọc từ file `.duckdb` mà không truy vấn lại các DB nguồn.
-- Test Export `.xlsx` & `.csv`: Kiểm tra file `.xlsx` xuất ra có chữ ký ZIP/OpenXML hợp lệ (`PK\x03\x04`, chứa `xl/worksheets/sheet1.xml`) và đọc ngược lại bằng `SELECT * FROM read_xlsx(...)` trong DuckDB khớp 100% số dòng/cột; kiểm tra file `.csv` và file `.zip` chia part khớp dữ liệu.
-
+Viết bộ test toàn diện tại `tests/Feature/MultiDbEngineAndExporterTest.php` kiểm chứng cả 4 kiểu `SELECT`, phân trang Snapshot (0 query lại nguồn ở trang 2), và kiểm tra cấu trúc binary OpenXML `.xlsx` (đọc lại bằng `read_xlsx` trong DuckDB khớp 100% dữ liệu) + `.csv` + `.zip`:
 ```bash
+vendor/bin/pint --dirty --format agent
 php artisan test --filter=MultiDbEngineAndExporterTest
 git add -A && git commit -m "feat(cluster-2): implement duckdb multi-db engine for pgsql/sqlsrv/oracle, snapshot paging and real xlsx/csv exporter"
 ```
@@ -207,7 +160,7 @@ git add -A && git commit -m "feat(cluster-2): implement duckdb multi-db engine f
 ---
 
 ### Cụm 3: Hệ Thống Quản Trị Filament: Data Sources (`sqlsrv`, `pgsql`, `oracle`), Menu Groups & Role Permissions
-**Worker phụ trách**: `admin-ui` | **Verifier**: `verifier`
+**Worker phụ trách**: `admin-ui` (Skills: `laravel-best-practices`, `tailwindcss-development`, `security-best-practices`) | **Verifier**: `verifier`
 
 #### Mục tiêu
 Xây dựng Filament Admin Panel đọc/ghi cấu hình trên SQLite, thanh Sidebar tự động đồng bộ từ `MenuGroup` + `CustomView` theo quyền của user, và 3 Filament Resources quản trị: **Quản lý Kết nối DB (`DataSourceResource`)**, **Quản lý Nhóm Menu (`MenuGroupResource`)**, **Phân quyền Vai trò (`RolePermissionResource`)**.
@@ -216,17 +169,14 @@ Xây dựng Filament Admin Panel đọc/ghi cấu hình trên SQLite, thanh Side
 1. **[MODIFY] `app/Providers/Filament/AdminPanelProvider.php` & [NEW] `app/Services/Navigation/DynamicSidebarBuilder.php`**:
    - Tự động hiển thị các nhóm menu và các `CustomView` trên thanh Sidebar theo quyền của user đăng nhập.
 2. **[NEW] `app/Filament/Resources/DataSourceResource.php`**:
-   - Ô chọn `driver` giới hạn đúng 3 loại kết nối được phép:
-     - `sqlsrv` (Microsoft SQL Server)
-     - `pgsql` (PostgreSQL)
-     - `oracle` (Oracle Database)
-   - Form cấu hình động theo `driver` (`host`, `port` mặc định `1433`/`5432`/`1521`, `database_name` hoặc `service_name` cho Oracle, `default_schema`, `username`, `password` mã hóa).
-   - Nút Action **"Kiểm tra kết nối (Test Connection)"**: Dùng DuckDB thử `ATTACH` và chạy `SELECT 1` trực tiếp tới SQL Server / PostgreSQL / Oracle, hiển thị thông báo kết nối thành công kèm thời gian phản hồi (ms).
+   - Ô chọn `driver` giới hạn đúng 3 loại kết nối được phép: `sqlsrv` (SQL Server), `pgsql` (PostgreSQL), `oracle` (Oracle Database).
+   - Nút Action **"Kiểm tra kết nối (Test Connection)"**: Dùng DuckDB thử kết nối trực tiếp tới SQL Server / PostgreSQL / Oracle và hiển thị thông báo kết quả kèm độ trễ (ms).
 3. **[NEW] `app/Filament/Resources/MenuGroupResource.php` & `app/Filament/Resources/RolePermissionResource.php`**:
-   - Quản lý các nhóm menu, phân quyền truy cập theo nhóm menu (`allowed_groups`), theo từng view (`allowed_views`), và theo từng nguồn DB (`allowed_sources`).
+   - Quản lý nhóm menu và phân quyền truy cập (`allowed_groups`, `allowed_views`, `allowed_sources`).
 
 #### Kiểm tra nghiệm thu (Acceptance Checks) & Commit Gate Cụm 3
 ```bash
+vendor/bin/pint --dirty --format agent
 php artisan test --filter=FilamentAdminResourcesTest
 git add -A && git commit -m "feat(cluster-3): add filament resources for sqlsrv/pgsql/oracle data sources, menu groups and role permissions"
 ```
@@ -234,24 +184,20 @@ git add -A && git commit -m "feat(cluster-3): add filament resources for sqlsrv/
 ---
 
 ### Cụm 4: Custom View Builder (`CustomViewResource`) Hỗ Trợ Đa Nguồn, Auto-Detect `@Param` & Test SQL 10 Dòng
-**Worker phụ trách**: `admin-ui` | **Verifier**: `verifier`
+**Worker phụ trách**: `admin-ui` (Skills: `laravel-best-practices`, `tailwindcss-development`, `security-best-practices`) | **Verifier**: `verifier`
 
 #### Mục tiêu
 Xây dựng màn hình thiết kế báo cáo SQL động (`CustomViewResource`) lưu vào SQLite, hỗ trợ cấu hình chọn nhiều DB (`single_or_union`) hoặc JOIN nhiều DB khác hệ quản trị (`federated_join`), tích hợp nút **"Tự động nhận diện @tham số"** và **"Chạy thử SQL (Preview 10 dòng)"** thực thi trực tiếp qua DuckDB lên các DB PostgreSQL / SQL Server / Oracle.
 
 #### Các bước thực hiện & Files
-1. **[NEW] `app/Filament/Resources/CustomViewResource.php` (+ Pages `ListCustomViews`, `CreateCustomView`, `EditCustomView`)**:
-   - **Khối 1 — Định danh & Phân quyền**: `view_code`, `view_name`, `menu_group_code`, `roles`, `description`.
-   - **Khối 2 — Chế độ Truy vấn & Chọn DB Nguồn**:
-     - `single_or_union` (**Truy vấn 1 DB hoặc gộp `UNION ALL` nhiều DB cùng cấu trúc**): Chọn danh sách `allowed_sources` (VD: chọn cả `pg_north` và `pg_south`), `default_sources`, và nhập câu lệnh `sql_text`.
-     - `federated_join` (**Truy vấn liên hợp `JOIN` nhiều DB khác loại trong DuckDB**): Khai báo danh sách `source_queries` (Repeater gồm: `alias`, `data_source_code` chọn từ `pg_north` / `pg_south` / `mssql_erp` / `oracle_hr`, và `sql_text` tùy chọn nếu muốn lọc trước ở nguồn) + ô nhập `sql_text` (câu lệnh DuckDB SQL nối các bảng/alias từ nhiều DB).
-   - **Khối 3 — Tự động nhận diện `@tham số` & Bộ lọc (`filters` Repeater)**:
-     - Nút Action **"Tự động nhận diện @tham số"**: Quét câu SQL, tự động điền các tham số `@StartDate`, `@EndDate`, `@Plant`, `@DeptCode`... vào bảng `filters` (`param_name`, `label`, `input_type`: `text|date|number|select`, `default_value`, `is_required`, `options`).
-   - **Khối 4 — Chạy thử SQL (Preview 10 dòng)**:
-     - Nút Action **"Chạy thử SQL (Test)"**: Chạy truy vấn thực tế qua DuckDB và render bảng xem trước **10 dòng đầu tiên**, danh sách cột, tổng số dòng và thời gian chạy ngay trong Builder.
+1. **[NEW] `app/Filament/Resources/CustomViewResource.php` (+ Pages)**:
+   - Cấu hình `execution_mode` (`single_or_union` với `allowed_sources` & `default_sources`, hoặc `federated_join` với Repeater `source_queries`).
+   - Action **"Tự động nhận diện @tham số"**: Quét câu SQL và tự động thêm dòng vào Repeater `filters` (`param_name`, `label`, `input_type`: `text|date|number|select`, `default_value`, `is_required`, `options`).
+   - Action **"Chạy thử SQL (Test)"**: Chạy thử qua DuckDB và hiển thị ngay bảng xem trước **10 dòng đầu tiên**, tổng số dòng, danh sách cột và thời gian thực thi.
 
 #### Kiểm tra nghiệm thu (Acceptance Checks) & Commit Gate Cụm 4
 ```bash
+vendor/bin/pint --dirty --format agent
 php artisan test --filter=CustomViewBuilderTest
 git add -A && git commit -m "feat(cluster-4): implement filament custom view builder with multi-db modes, param detector and 10-row preview"
 ```
@@ -259,7 +205,7 @@ git add -A && git commit -m "feat(cluster-4): implement filament custom view bui
 ---
 
 ### Cụm 5: Màn Hình Chạy Báo Cáo (`ReportRunnerPage` 3-Tab UI) & Trang Xuất File (`SqlExportPage` Chuẩn `.xlsx` / `.csv`)
-**Worker phụ trách**: `report-ui` (phối hợp `engine`) | **Verifier**: `verifier`
+**Worker phụ trách**: `report-ui` (Skills: `laravel-best-practices`, `tailwindcss-development`) | **Verifier**: `verifier`
 
 #### Mục tiêu
 Xây dựng màn hình hiển thị báo cáo động (`ReportRunnerPage` tại `/admin/reports/{viewCode}`) với bộ chọn nhiều DB nguồn trực tiếp trên giao diện, 3 Tab thông tin (`Tổng quan`, `Application information`, `SQL Query`), phân trang 10 dòng từ DuckDB Snapshot, và nút xuất chính xác 2 định dạng **Excel (`.xlsx`)** và **CSV (`.csv`)** cùng trang `SqlExportPage`.
@@ -267,24 +213,16 @@ Xây dựng màn hình hiển thị báo cáo động (`ReportRunnerPage` tại 
 #### Các bước thực hiện & Files
 1. **[NEW] `app/Filament/Pages/ReportRunnerPage.php` & `resources/views/filament/pages/report-runner-page.blade.php`**:
    - **Tab 1 — `Tổng quan (Overview)`**:
-     - **Bộ lọc & Chọn Database hiển thị**:
-       - Cho phép người dùng chọn 1 hoặc nhiều Database từ danh sách nguồn của báo cáo (VD: chọn `pg_north`, `pg_south`, hoặc xem danh sách các DB `oracle_hr` + `mssql_erp` đang tham gia `JOIN`).
-       - Các ô điều kiện lọc động (`date`, `text`, `number`, `select`).
-       - Các nút thao tác: **Tra cứu**, **Xuất Excel (`.xlsx`)**, **Xuất CSV (`.csv`)**, **Làm mới**.
-     - **Bảng kết quả & Phân trang 10 dòng**:
-       - Hiển thị 10 dòng mỗi trang từ DuckDB Snapshot, có badge hiển thị DB nguồn (`_source_db`), tổng số bản ghi, thời gian truy vấn và thanh chuyển trang không cần query lại DB nguồn.
-   - **Tab 2 — `Application information`**:
-     - Hiển thị `UI Name`, `UI ID`, `Version`, `Execution Mode`, danh sách các DB nguồn (`PostgreSQL`, `SQL Server`, `Oracle`) kèm thời điểm đọc dữ liệu và mã Snapshot.
-   - **Tab 3 — `SQL Query` (Live SQL Inspector)**:
-     - Tự động cập nhật `Use Criteria` (bao gồm các DB đang tick chọn), `@Parameters` và câu lệnh SQL thực thi khi người dùng thay đổi bộ lọc.
+     - Ô **Chọn Database hiển thị (Multi-Select / Checkboxes)** + các ô điều kiện lọc động + nút **Tra cứu**, **Xuất Excel (`.xlsx`)**, **Xuất CSV (`.csv`)**, **Làm mới**.
+     - Lưới dữ liệu động hiển thị 10 dòng/trang từ DuckDB Snapshot, badge hiển thị `_source_db`, thanh chuyển trang không gọi lại DB nguồn.
+   - **Tab 2 — `Application information`**: Hiển thị `UI Name`, `UI ID`, `Version`, `Execution Mode`, các DB nguồn (`PostgreSQL`, `SQL Server`, `Oracle`) kèm timestamp đọc dữ liệu và mã Snapshot.
+   - **Tab 3 — `SQL Query` (Live SQL Inspector)**: Tự động cập nhật `Use Criteria`, `@Parameters`, câu SQL nguồn và câu SQL liên hợp trong DuckDB.
 2. **[NEW] `app/Filament/Pages/SqlExportPage.php` & `resources/views/filament/pages/sql-export-page.blade.php`**:
-   - Cho phép Admin chọn DB nguồn (`PostgreSQL`, `SQL Server`, `Oracle` hoặc truy vấn liên hợp nhiều DB), nhập câu lệnh `SELECT / WITH`, chọn định dạng xuất:
-     - **Excel chuẩn (`.xlsx`)**
-     - **CSV chuẩn UTF-8 (`.csv`)**
-   - Hỗ trợ tùy chọn **"Tự động chia nhỏ file và nén `.zip`"** khi vượt ngưỡng dòng (`10 dòng (Test)`, `100.000 dòng`, `500.000 dòng`, `1.000.000 dòng`).
+   - Cho phép chọn DB nguồn (`PostgreSQL`, `SQL Server`, `Oracle` hoặc liên hợp), nhập câu lệnh `SELECT / WITH`, chọn định dạng **Excel (`.xlsx`)** hoặc **CSV (`.csv`)**, và bật/tắt chia nhỏ file `.zip` (`10 dòng (Test)`, `100.000 dòng`, `500.000 dòng`, `1.000.000 dòng`).
 
 #### Kiểm tra nghiệm thu (Acceptance Checks) & Commit Gate Cụm 5
 ```bash
+vendor/bin/pint --dirty --format agent
 php artisan test --filter=ReportRunnerAndSqlExportTest
 git add -A && git commit -m "feat(cluster-5): build multi-db report runner page with 3-tab inspector and xlsx/csv export pages"
 ```
@@ -292,25 +230,23 @@ git add -A && git commit -m "feat(cluster-5): build multi-db report runner page 
 ---
 
 ### Cụm 6: Kiểm Thử Trình Duyệt End-to-End Bằng Playwright CLI / Chrome MCP & Nghiệm Thu
-**Worker phụ trách**: `verifier` (phối hợp `admin-ui` / `report-ui` nếu cần chỉnh sửa)
+**Worker phụ trách**: `verifier` (Skills: `playwright-cli`, `testing-best-practices`, `phpunit-skill`)
 
 #### Mục tiêu
-Kiểm thử toàn diện ứng dụng đang chạy thật trên trình duyệt bằng **Playwright (`npx playwright test` & `playwright-cli`)** / **Chrome MCP**, kiểm chứng kết nối thực tế tới cả **PostgreSQL, SQL Server, Oracle**, kiểm chứng các cách `SELECT` đa nguồn và kiểm chứng file tải về đúng chuẩn **`.xlsx`** và **`.csv`**.
+Kiểm thử toàn diện ứng dụng đang chạy thật trên trình duyệt bằng **Playwright (`npx playwright test` & `playwright-cli`)** / **Chrome MCP**, kiểm chứng kết nối thực tế tới cả **PostgreSQL, SQL Server, Oracle**, kiểm chứng cả 4 kiểu `SELECT` đa nguồn và kiểm chứng file tải về đúng chuẩn **`.xlsx`** và **`.csv`**.
 
 #### Các kịch bản kiểm thử E2E bắt buộc (`tests/e2e/smartreport.spec.ts`)
 1. **E2E 1 — Kiểm tra Kết nối 3 Hệ Quản Trị (`PostgreSQL`, `SQL Server`, `Oracle`)**:
-   - Đăng nhập `/admin`, mở `Data Sources`, xác nhận chỉ cho phép 3 driver (`sqlsrv`, `pgsql`, `oracle`).
-   - Bấm `Test Connection` trên cả 4 nguồn (`pg_north`, `pg_south`, `mssql_erp`, `oracle_hr`) và xác nhận thông báo kết nối thành công.
+   - Đăng nhập `/admin`, mở `Data Sources`, xác nhận chỉ cho phép 3 driver (`sqlsrv`, `pgsql`, `oracle`) và bấm `Test Connection` thành công trên cả 4 nguồn (`pg_north`, `pg_south`, `mssql_erp`, `oracle_hr`).
 2. **E2E 2 — Tạo Custom View Mới Với Auto-Detect `@Param` & Preview 10 Dòng**:
-   - Vào `Custom Views -> Create`, tạo một báo cáo mới kết nối DB, nhập câu lệnh SQL có `@StartDate`, `@Plant`, bấm **"Tự động nhận diện @tham số"**, bấm **"Chạy thử SQL (Test)"** xem trước 10 dòng, lưu lại và kiểm tra View xuất hiện ngay trên Sidebar.
-3. **E2E 3 — Thử Nghiệm Nhiều Cách `SELECT` Lên Các Loại DB Trên `ReportRunnerPage`**:
-   - **Cách 1 (Single-DB trên SQL Server & Oracle)**: Mở báo cáo `mssql-production-orders` và `oracle-hr-directory`, lọc theo `@Plant` / `@DeptCode`, kiểm tra kết quả hiển thị đúng 10 dòng/trang.
-   - **Cách 2 (Multi-DB `UNION ALL` trên 2 DB PostgreSQL)**: Mở `pg-multi-plant-contracts`, đầu tiên chỉ chọn `pg_north` (ra 25 dòng), sau đó tick chọn cả `pg_north` + `pg_south` (ra 45 dòng, có cột `_source_db` phân biệt `pg_north` và `pg_south`), bấm sang Trang 2 xác nhận phân trang mượt từ Snapshot.
-   - **Cách 3 (Cross-Engine 2-DB `JOIN` Oracle + SQL Server)**: Mở `join-oracle-mssql-productivity`, xác nhận bảng kết quả ghép đúng tên nhân viên từ Oracle với sản lượng máy từ SQL Server.
-   - **Cách 4 (3-Way Federation `Oracle + SQL Server + PostgreSQL`)**: Mở `federated-3way-executive-report`, kiểm tra kết quả tổng hợp từ cả 3 loại DB và kiểm tra nội dung 2 tab `Application information` & `SQL Query`.
+   - Tạo View mới trong `Custom Views`, nhập SQL có `@StartDate`, `@Plant`, bấm **"Tự động nhận diện @tham số"**, bấm **"Chạy thử SQL (Test)"** xem trước 10 dòng, lưu lại và xác nhận xuất hiện trên Sidebar.
+3. **E2E 3 — Thử Nghiệm 4 Cách `SELECT` Lên Các Loại DB Trên `ReportRunnerPage`**:
+   - **Cách 1 (Single-DB trên SQL Server & Oracle)**: Mở `mssql-production-orders` và `oracle-hr-directory`, kiểm tra lọc và hiển thị 10 dòng/trang.
+   - **Cách 2 (Multi-DB `UNION ALL` trên 2 DB PostgreSQL)**: Mở `pg-multi-plant-contracts`, chọn `pg_north` (25 dòng) rồi chọn gộp `pg_north` + `pg_south` (45 dòng, có badge `_source_db`), chuyển sang Trang 2 từ Snapshot.
+   - **Cách 3 (Cross-Engine 2-DB `JOIN` Oracle + SQL Server)**: Mở `join-oracle-mssql-productivity`, kiểm tra kết quả `JOIN` giữa Oracle và SQL Server.
+   - **Cách 4 (3-Way Federation `Oracle + SQL Server + PostgreSQL`)**: Mở `federated-3way-executive-report`, kiểm tra kết quả tổng hợp xuyên 3 hệ DB và kiểm tra 2 tab `Application information` & `SQL Query`.
 4. **E2E 4 — Kiểm Tra Tải File Xuất Chuẩn `.xlsx` và `.csv` (+ Chia nhỏ `.zip`)**:
-   - Trên màn hình báo cáo và màn hình `SQL Export`, bấm **Xuất Excel (`.xlsx`)** và **Xuất CSV (`.csv`)**.
-   - Xác nhận bằng Playwright download event rằng file `.xlsx` tải về là file OpenXML hợp lệ (đọc lại được bằng DuckDB `read_xlsx`) và file `.csv` có đầy đủ header + dữ liệu UTF-8 chính xác, cũng như chế độ chia nhỏ file xuất ra đúng `.zip`.
+   - Bấm **Xuất Excel (`.xlsx`)** và **Xuất CSV (`.csv`)**, xác nhận file `.xlsx` tải về đọc lại được bằng DuckDB `read_xlsx` và file `.csv` / `.zip` đúng dữ liệu.
 5. **Chụp ảnh màn hình nghiệm thu** bằng `playwright-cli` / Chrome MCP lưu vào `docs/screenshots/`.
 
 #### Kiểm tra nghiệm thu (Acceptance Checks) & Commit Gate Cụm 6
@@ -327,7 +263,8 @@ git add -A && git commit -m "test(cluster-6): verify multi-db select patterns an
 
 | Thứ tự | Cụm công việc | Commit Message chuẩn |
 | :---: | :--- | :--- |
-| **1** | Cụm 1: Laravel + SQLite Config + DuckDB 2.0 Extensions + Docker DBs (`pgsql`, `sqlsrv`, `oracle`) | `feat(cluster-1): setup laravel sqlite config, duckdb 2.0 extensions and postgres/mssql/oracle test databases` |
+| **0** | Baseline: Laravel 13 + Filament 5 + Laravel Boost + DuckDB 2.0 + Skills & Plan | `chore: initialize laravel 13, filament 5, laravel boost, duckdb 2.0 and project plan` |
+| **1** | Cụm 1: SQLite Schema + Seed Dữ Liệu Thật Lên 4 DB (`pgsql`, `sqlsrv`, `oracle`) | `feat(cluster-1): setup sqlite schema, provision postgres/mssql/oracle test data and seed 5 multi-db views` |
 | **2** | Cụm 2: DuckDB Multi-DB Engine + Snapshot Pagination + Chuẩn `.xlsx` / `.csv` Exporter | `feat(cluster-2): implement duckdb multi-db engine for pgsql/sqlsrv/oracle, snapshot paging and real xlsx/csv exporter` |
 | **3** | Cụm 3: Filament Admin Resources (`DataSourceResource` cho 3 hệ DB, Menu, Role) | `feat(cluster-3): add filament resources for sqlsrv/pgsql/oracle data sources, menu groups and role permissions` |
 | **4** | Cụm 4: Custom View Builder + Auto-detect `@param` + Live 10-Row Preview | `feat(cluster-4): implement filament custom view builder with multi-db modes, param detector and 10-row preview` |

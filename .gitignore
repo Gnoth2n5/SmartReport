@@ -22,6 +22,10 @@
 /public/js/filament
 /public/storage
 /storage/*.key
+/storage/bin/duckdb
+/storage/app/snapshots/*.duckdb
+/storage/app/exports/*
+/.playwright-cli
 /storage/pail
 /vendor
 _ide_helper.php

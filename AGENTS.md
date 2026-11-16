@@ -1,3 +1,75 @@
+# SmartReport — Project Agent Instructions (`AGENTS.md`)
+
+## 1. Project Identity & Core Architecture
+
+**SmartReport** (`/home/v25050017/project/laravel/DAR/SmartReport`) is a dynamic Multi-Database SQL Reporting & Federation platform built with **Laravel 13**, **Filament 5**, **SQLite (internal config store)**, and **DuckDB 2.0 (Federated Query & Snapshot Engine)**.
+
+- **Internal Configuration Database (`DB_CONNECTION=sqlite`)**:
+  - Stored in `database/database.sqlite`.
+  - Holds `users`, `data_sources`, `menu_groups`, `role_permissions`, and `custom_views` (SQL definitions, source mappings, and filter schemas).
+- **Allowed External Report Target Drivers (Strictly 3 Drivers)**:
+  1. `sqlsrv` (**Microsoft SQL Server**) — connected via DuckDB 2.0 community extension `mssql` (native TDS 7.4):
+     - Catalog attach: `LOAD mssql; ATTACH 'Server=127.0.0.1,1433;Database=erp_production;User Id=sa;Password=DevPassword!123;TrustServerCertificate=yes' AS ms (TYPE mssql);`
+     - Native T-SQL passthrough: `SELECT * FROM mssql_scan('ms', 'SELECT ...')` or direct table query `SELECT * FROM ms.dbo.table_name`.
+  2. `pgsql` (**PostgreSQL**) — connected via DuckDB 2.0 core extension `postgres`:
+     - Catalog attach: `LOAD postgres; ATTACH 'host=127.0.0.1 port=5432 user=etl_user password=etl_password dbname=source_db' AS pg (TYPE postgres, READ_ONLY);`
+     - Native SQL passthrough: `SELECT * FROM postgres_query('pg', 'SELECT ...')` or direct table query `SELECT * FROM pg.public.table_name`.
+  3. `oracle` (**Oracle Database**) — connected via DuckDB 2.0 community extension `oracle_scanner` (native TNS/TTC):
+     - Secret & Attach: `LOAD oracle_scanner; CREATE SECRET ora_sec (TYPE oracle, DSN '127.0.0.1:1521/FREEPDB1', USER 'app', PASSWORD 'app'); ATTACH 'ora_sec' AS ora (TYPE oracle_scanner);`
+     - Native Oracle SQL passthrough: `SELECT * FROM oracle_query('ora_sec', 'SELECT ... FROM DUAL')` or direct table query `SELECT * FROM ora.APP.TABLE_NAME`.
+- **DuckDB 2.0 Binary & Invocation Rules**:
+  - Installed globally at `/home/v25050017/.local/share/mise/installs/node/22.23.1/bin/duckdb` (`duckdb` on `PATH`) and locally at `storage/bin/duckdb` (`v2.0.0`) with pre-installed extensions: `postgres`, `mssql`, `oracle_scanner`, `excel`.
+  - **CRITICAL CLI FLAG**: Always invoke `duckdb` with `-batch -light-mode` (e.g., `duckdb -batch -light-mode -json ...`) to prevent the 5-second terminal background color detection timeout in non-TTY subprocesses!
+- **Snapshot Pagination & Security Boundary**:
+  - Never re-query external databases (`sqlsrv`, `pgsql`, `oracle`) when paginating (page 2, 3...) or exporting!
+  - Every report search materializes results into a session/query-scoped snapshot file at `storage/app/snapshots/{snapshot_id}.duckdb` with a deterministic `__row_id` column and `report_meta` table.
+  - Before running user/federation SQL on staged data, detach external catalogs and run `SET enable_external_access = false;` to prevent arbitrary local file reads.
+  - Pagination reads 11 rows (`LIMIT 11 OFFSET ?`) from the snapshot to display 10 rows per page and detect `has_next_page`.
+- **Export Standards (Strictly 2 Formats: Real `.xlsx` & UTF-8 `.csv`)**:
+  - **Excel (`.xlsx`)**: Must use DuckDB 2.0's core `excel` extension (`LOAD excel; COPY (...) TO '...xlsx' WITH (FORMAT xlsx, HEADER true, SHEET 'SmartReport');`) producing a genuine OpenXML `.xlsx` binary (never fake HTML `.xls`).
+  - **CSV (`.csv`)**: Must use `COPY (...) TO '...csv' WITH (FORMAT csv, HEADER true, DELIMITER ',')` with UTF-8 BOM (`\xEF\xBB\xBF`) prepended for Excel compatibility.
+  - Both formats must support automatic multi-part splitting (`_part1`, `_part2`...) packaged into a `.zip` archive when row count exceeds `splitRows`.
+
+---
+
+## 2. WSL & `docker-db` Test Databases (Do NOT Use Legacy DAR SQL)
+
+Do **not** import or use legacy SQL queries from `../DAR/App_Data/custom-views.json`. All development and automated testing must use the real enterprise databases running in this WSL environment (`/home/v25050017/docker-db/compose.yml`):
+
+| Source Code | Engine | Host : Port | Database / Service | Credentials | Purpose in Tests |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `pg_north` | PostgreSQL 16 (`etl_postgres`) | `127.0.0.1:5432` | `source_db` | `etl_user` / `etl_password` | Plant North contracts & shipment details (`public.v_epcontract`, `public.v_epcontract_detail`) |
+| `pg_south` | PostgreSQL 16 (`dev-postgres`) | `127.0.0.1:5433` | `app` | `app` / `app` | Plant South contracts & shipment details (`public.v_epcontract`, `public.v_epcontract_detail`) |
+| `mssql_erp` | SQL Server 2022 (`dev-mssql`) | `127.0.0.1:1433` | `erp_production` | `sa` / `DevPassword!123` | Production work orders & machine shift logs (`dbo.production_orders`, `dbo.machine_logs`) |
+| `oracle_hr` | Oracle 23ai Free (`dev-oracle`) | `127.0.0.1:1521` | `FREEPDB1` | `app` / `app` (or `system` / `oracle`) | HR employees & department cost centers (`APP.EMPLOYEES`, `APP.DEPARTMENTS`) |
+
+---
+
+## 3. Mandatory Skill Activation & `/teamwork` Routing
+
+Catalog: [`.agents/skills/README.md`](.agents/skills/README.md). Load only the skills required for your role:
+
+| Role / Task | Skills to Activate (`.agents/skills/<name>/SKILL.md`) |
+| :--- | :--- |
+| **`engine`** (DuckDB Engine, Snapshot, `.xlsx`/`.csv` Exporter, Migrations) | `laravel-best-practices` + `security-best-practices` |
+| **`admin-ui`** (Filament Resources: Data Sources, Menu, Roles, CustomView Builder) | `laravel-best-practices` + `tailwindcss-development` + `security-best-practices` |
+| **`report-ui`** (`ReportRunnerPage` 3-Tab UI, Multi-DB Selector, `SqlExportPage`) | `laravel-best-practices` + `tailwindcss-development` |
+| **`verifier` (PHPUnit / Integration)** | `testing-best-practices` + `phpunit-skill` |
+| **`verifier` (Browser E2E / UI)** | `playwright-cli` + `testing-best-practices` |
+| **Security & Threat Review** | `security-threat-model` + `security-best-practices` |
+| **Small-Model Task Compilation** | `small-agent-task-compiler` |
+
+---
+
+## 4. Ponytail — Lazy Senior Dev Rules
+
+1. **YAGNI**: Do not build unrequested abstractions, interfaces with one implementation, or speculative background queues.
+2. **Reuse before writing**: Use Filament 5 native Forms/Tables/Actions/Notifications and DuckDB 2.0 native `ATTACH` / `COPY ... FORMAT xlsx` / `COPY ... FORMAT csv` instead of writing custom parsers or spreadsheet builders.
+3. **Commit Gate per Cluster**: Every work cluster must end with passing tests (`php artisan test`, `vendor/bin/pint --dirty --format agent`) and a clean `git commit` before starting the next cluster.
+4. **Reuse Subagents**: In `/teamwork`, keep the 4 core workers (`engine`, `admin-ui`, `report-ui`, `verifier`) alive across clusters and assign follow-up work via `@worker-name` rather than killing and re-spawning.
+
+---
+
 <laravel-boost-guidelines>
 === foundation rules ===
 
@@ -5,7 +77,7 @@
 
 ## Foundational Context
 
-This application is a Laravel application running on PHP 8.3. Always use the APIs that match the installed major version of each package — do not assume a version.
+This application is a Laravel application running on PHP 8.3 (Laravel 13 + Filament 5 + Livewire 4). Always use the APIs that match the installed major version of each package — do not assume a version.
 
 Before relying on a package's API, confirm its installed version:
 - PHP packages: run `composer show --direct` to list direct dependencies with versions, or `composer show <vendor/package>` for a single package.
@@ -13,30 +85,21 @@ Before relying on a package's API, confirm its installed version:
 
 ## Skills Activation
 
-This project has domain-specific skills available in `**/skills/**`. You MUST activate the relevant skill whenever you work in that domain—don't wait until you're stuck.
+This project has domain-specific skills available in `.agents/skills/*`. You MUST activate the relevant skill whenever you work in that domain—don't wait until you're stuck.
 
 ## Conventions
 
-- You must follow all existing code conventions used in this application. When creating or editing a file, check sibling files for the correct structure, approach, and naming.
-- Use descriptive names for variables and methods. For example, `isRegisteredForDiscounts`, not `discount()`.
+- Follow all existing code conventions used in this application.
+- Use descriptive names for variables and methods.
 - Check for existing components to reuse before writing a new one.
 
 ## Verification Scripts
 
-- Do not create verification scripts or tinker when tests cover that functionality and prove they work. Unit and feature tests are more important.
-
-## Application Structure & Architecture
-
-- Stick to existing directory structure; don't create new base folders without approval.
-- Do not change the application's dependencies without approval.
+- Do not leave temporary verification scripts behind when PHPUnit and Playwright tests cover that functionality and prove they work.
 
 ## Frontend Bundling
 
-- If a frontend change doesn't show in the UI or you get a "Unable to locate file in Vite manifest" error, run `npm run build` or ask the user to run `npm run dev` or `composer run dev`.
-
-## Documentation Files
-
-- You must only create documentation files if explicitly requested by the user.
+- If a frontend change doesn't show in the UI or you get a "Unable to locate file in Vite manifest" error, run `npm run build`.
 
 === boost rules ===
 
@@ -44,105 +107,23 @@ This project has domain-specific skills available in `**/skills/**`. You MUST ac
 
 ## Tools
 
-- Laravel Boost is an MCP server with tools designed specifically for this application. Prefer Boost tools over manual alternatives like shell commands or file reads.
-- Use `database-query` to run read-only queries against the database instead of writing raw SQL in tinker.
-- Use `database-schema` to inspect table structure before writing migrations or models.
-- Use `get-absolute-url` to resolve the correct scheme, domain, and port for project URLs. Always use this before sharing a URL with the user.
-- Use `browser-logs` to read browser logs, errors, and exceptions. Only recent logs are useful, ignore old entries.
-
-## Searching Documentation (IMPORTANT)
-
-- Use `search-docs` before changes that depend on Laravel ecosystem APIs, behavior, configuration, or version-specific syntax. Skip it for copy-only edits and other changes where package documentation is irrelevant. Reuse sufficient results already in context instead of searching again.
-- Pass a `packages` array to scope results when you know which packages are relevant.
-- Use multiple broad, topic-based queries: `['rate limiting', 'routing rate limiting', 'routing']`. Expect the most relevant results first.
-- Do not add package names to queries because package info is already shared. Use `test resource table`, not `filament 4 test resource table`.
-
-### Search Syntax
-
-1. Use words for auto-stemmed AND logic: `rate limit` matches both "rate" AND "limit".
-2. Use `"quoted phrases"` for exact position matching: `"infinite scroll"` requires adjacent words in order.
-3. Combine words and phrases for mixed queries: `middleware "rate limit"`.
-4. Use multiple queries for OR logic: `queries=["authentication", "middleware"]`.
-
-## Project Rules
-
-- This project contains committed, area-grouped rules in `.ai/rules` when that directory exists, including path-scoped framework guidelines under `.ai/rules/boost`. Before you enter plan mode or create/edit any file, you MUST first: open @.ai/rules/index.md (it maps file globs to rule files), read every rule file whose globs cover the path(s) in scope, and run `grep -rin 'keyword' .ai/rules` to catch what a path match alone misses. Do not write code until you have read and are following every matching rule. If `.ai/rules` does not exist, continue without it.
-
-## Artisan
-
-- Run Artisan commands directly via the command line (e.g., `php artisan route:list`). Use `php artisan list` to discover available commands and `php artisan [command] --help` to check parameters.
-- Inspect routes with `php artisan route:list`. Filter with: `--method=GET`, `--name=users`, `--path=api`, `--except-vendor`, `--only-vendor`.
-- Read configuration values using dot notation: `php artisan config:show app.name`, `php artisan config:show database.default`. Or read config files directly from the `config/` directory.
-
-## Tinker
-
-- Execute PHP in app context for debugging and testing code. Do not create models without user approval, prefer tests with factories instead. Prefer existing Artisan commands over custom tinker code.
-- Always use single quotes to prevent shell expansion: `php artisan tinker --execute 'Your::code();'`
-  - Double quotes for PHP strings inside: `php artisan tinker --execute 'User::where("active", true)->count();'`
+- Prefer Boost MCP tools (`database-query`, `database-schema`, `search-docs`, `tinker`, `list-routes`, `get-absolute-url`) when available, or standard `php artisan` commands.
 
 === php rules ===
 
 # PHP
 
 - Always use curly braces for control structures, even for single-line bodies.
-- Use PHP 8 constructor property promotion: `public function __construct(public GitHub $github) { }`. Do not leave empty zero-parameter `__construct()` methods unless the constructor is private.
-- Use explicit return type declarations and type hints for all method parameters: `function isAccessible(User $user, ?string $path = null): bool`
-- Use TitleCase for Enum keys: `FavoritePerson`, `BestLake`, `Monthly`.
-- Prefer PHPDoc blocks over inline comments. Only add inline comments for exceptionally complex logic.
-- Use array shape type definitions in PHPDoc blocks.
-
-=== deployments rules ===
-
-# Deployment
-
-- Laravel can be deployed using [Laravel Cloud](https://cloud.laravel.com/), which is the fastest way to deploy and scale production Laravel applications.
-- Activate the `deploying-to-cloud` skill whenever deploying to Laravel Cloud, configuring Cloud environments or resources, using the Cloud CLI, or troubleshooting Cloud deployments.
+- Use PHP 8 constructor property promotion.
+- Use explicit return type declarations and type hints for all method parameters.
+- Use TitleCase for Enum keys.
 
 === laravel/core rules ===
 
 # Do Things the Laravel Way
 
-- Use `php artisan make:` commands to create new files (i.e. migrations, controllers, models, etc.). You can list available Artisan commands using `php artisan list` and check their parameters with `php artisan [command] --help`.
-- If you're creating a generic PHP class, use `php artisan make:class`.
-- Pass `--no-interaction` to all Artisan commands to ensure they work without user input. You should also pass the correct `--options` to ensure correct behavior.
-
-### Model Creation
-
-- When creating new models, create useful factories and seeders for them too. Ask the user if they need any other things, using `php artisan make:model --help` to check the available options.
-
-## APIs & Eloquent Resources
-
-- For APIs, default to using Eloquent API Resources and API versioning unless existing API routes do not, then you should follow existing application convention.
-
-## URL Generation
-
-- When generating links to other pages, prefer named routes and the `route()` function.
-
-## Testing
-
-- When creating models for tests, use the factories for the models. Check if the factory has custom states that can be used before manually setting up the model.
-- Faker: Use methods such as `$this->faker->word()` or `fake()->randomDigit()`. Follow existing conventions whether to use `$this->faker` or `fake()`.
-- When creating tests, make use of `php artisan make:test [options] {name}` to create a feature test, and pass `--unit` to create a unit test. Most tests should be feature tests.
-
-=== pint/core rules ===
-
-# Laravel Pint Code Formatter
-
-- If you have modified any PHP files, you must run `vendor/bin/pint --dirty --format agent` before finalizing changes to ensure your code matches the project's expected style.
-- Do not run `vendor/bin/pint --test --format agent`, simply run `vendor/bin/pint --format agent` to fix any formatting issues.
-
-=== phpunit/core rules ===
-
-# PHPUnit
-
-- This project uses PHPUnit. Create tests with `php artisan make:test --phpunit {name}`.
-- Do not include the test suite directory in `{name}`. Use `SomeFeatureTest`, not `Feature/SomeFeatureTest`.
-- Read the `testing-best-practices` skill for guidance on coverage, naming, structure, dependency isolation, and review.
-
-## Running Tests
-
-- Run the narrowest set of tests that covers the change. Pass a file path or `--filter=testName` to `php artisan test --compact`.
-- Rerun a test after each change to it.
-- Run `vendor/bin/phpunit` to call the test runner directly. It accepts the same file path and `--filter=testName` arguments.
+- Pass `--no-interaction` to all Artisan commands.
+- Run `vendor/bin/pint --dirty --format agent` before committing PHP changes.
+- Run `php artisan test --compact` (or `--filter=...`) to verify changes.
 
 </laravel-boost-guidelines>
