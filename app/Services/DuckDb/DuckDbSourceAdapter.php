@@ -1,0 +1,324 @@
+<?php
+
+namespace App\Services\DuckDb;
+
+use App\Models\CustomView;
+use App\Models\DataSource;
+use InvalidArgumentException;
+use RuntimeException;
+use Symfony\Component\Process\Process;
+
+class DuckDbSourceAdapter
+{
+    /**
+     * Map of known table names to qualify when schemas are omitted in queries.
+     *
+     * @var array<string, list<string>>
+     */
+    protected const KNOWN_TABLES = [
+        DataSource::DRIVER_PGSQL => ['v_epcontract', 'v_epcontract_detail'],
+        DataSource::DRIVER_SQLSRV => ['production_orders', 'machine_logs'],
+        DataSource::DRIVER_ORACLE => ['EMPLOYEES', 'DEPARTMENTS', 'employees', 'departments'],
+    ];
+
+    /**
+     * Generate LOAD extension SQL for the driver.
+     */
+    public function generateLoadExtensionSql(string $driver): string
+    {
+        return match ($driver) {
+            DataSource::DRIVER_PGSQL => 'LOAD postgres;',
+            DataSource::DRIVER_SQLSRV => 'LOAD mssql;',
+            DataSource::DRIVER_ORACLE => 'LOAD oracle_scanner;',
+            default => throw new InvalidArgumentException("Unsupported driver [{$driver}] for DuckDB extension loading."),
+        };
+    }
+
+    /**
+     * Generate ATTACH (and CREATE SECRET if needed) SQL for a DataSource.
+     */
+    public function generateAttachSql(DataSource $source, ?string $alias = null): string
+    {
+        $alias = $alias ?: $source->code;
+
+        return match ($source->driver) {
+            DataSource::DRIVER_PGSQL => sprintf(
+                "ATTACH 'host=%s port=%d user=%s password=%s dbname=%s' AS %s (TYPE postgres, READ_ONLY);",
+                $source->host,
+                $source->port ?: 5432,
+                $source->username,
+                $source->password,
+                $source->database_name,
+                $alias
+            ),
+            DataSource::DRIVER_SQLSRV => sprintf(
+                "ATTACH 'Server=%s,%d;Database=%s;User Id=%s;Password=%s;TrustServerCertificate=yes' AS %s (TYPE mssql);",
+                $source->host,
+                $source->port ?: 1433,
+                $source->database_name,
+                $source->username,
+                $source->password,
+                $alias
+            ),
+            DataSource::DRIVER_ORACLE => sprintf(
+                "CREATE SECRET IF NOT EXISTS %s (TYPE oracle, DSN '%s:%d/%s', USER '%s', PASSWORD '%s');\nATTACH '%s' AS %s (TYPE oracle_scanner);",
+                $alias,
+                $source->host,
+                $source->port ?: 1521,
+                $source->service_name ?: 'FREEPDB1',
+                $source->username,
+                $source->password,
+                $alias,
+                $alias
+            ),
+            default => throw new InvalidArgumentException("Unsupported driver [{$source->driver}] for DataSource [{$source->code}]."),
+        };
+    }
+
+    /**
+     * Generate DETACH SQL for a DataSource alias.
+     */
+    public function generateDetachSql(DataSource|string $sourceOrAlias): string
+    {
+        $alias = is_string($sourceOrAlias) ? $sourceOrAlias : $sourceOrAlias->code;
+
+        return "DETACH {$alias};";
+    }
+
+    /**
+     * Bind parameters safely into SQL. Handles @today, string quoting, numeric casting, and literal NULL.
+     *
+     * @param  array<string, mixed>  $params
+     */
+    public function bindParameters(string $sql, array $params): string
+    {
+        // Normalize parameter names: strip leading @ and lowercase for matching
+        $normalized = [];
+        foreach ($params as $key => $val) {
+            $cleanKey = ltrim((string) $key, '@');
+            $normalized[strtolower($cleanKey)] = $val;
+            $normalized[$cleanKey] = $val;
+        }
+
+        return (string) preg_replace_callback('/@([a-zA-Z0-9_]+)\b/', function ($matches) use ($normalized) {
+            $paramName = $matches[1];
+            $lower = strtolower($paramName);
+
+            // Special case: @today with no explicit value passed defaults to current date
+            if ($lower === 'today' && ! array_key_exists($lower, $normalized) && ! array_key_exists($paramName, $normalized)) {
+                return "'".date('Y-m-d')."'";
+            }
+
+            $val = null;
+            if (array_key_exists($paramName, $normalized)) {
+                $val = $normalized[$paramName];
+            } elseif (array_key_exists($lower, $normalized)) {
+                $val = $normalized[$lower];
+            }
+
+            // Bind literal NULL if value is null, empty string, or string "NULL"
+            if ($val === null || $val === '' || (is_string($val) && strtoupper(trim($val)) === 'NULL')) {
+                return 'NULL';
+            }
+
+            // Boolean
+            if (is_bool($val)) {
+                return $val ? 'TRUE' : 'FALSE';
+            }
+
+            // Numeric types
+            if (is_int($val) || is_float($val)) {
+                return (string) $val;
+            }
+
+            // If string is strictly numeric and token name hints at number (Qty, Amount, Price, Cost, Num)
+            if (is_string($val) && is_numeric($val) && preg_match('/(Qty|Amount|Price|Cost|Num)/i', $paramName)) {
+                return (string) $val;
+            }
+
+            // String quoting: escape single quotes by doubling them
+            $escaped = str_replace("'", "''", (string) $val);
+
+            return "'{$escaped}'";
+        }, $sql);
+    }
+
+    /**
+     * Build native dialect passthrough query (postgres_query, mssql_scan, oracle_query).
+     * Note: Oracle queries must have trailing semicolons trimmed.
+     */
+    public function buildPassthroughQuery(DataSource $source, string $query, ?string $alias = null): string
+    {
+        $alias = $alias ?: $source->code;
+        $trimmed = rtrim(trim($query), ';');
+        $escaped = str_replace("'", "''", $trimmed);
+
+        return match ($source->driver) {
+            DataSource::DRIVER_PGSQL => "SELECT * FROM postgres_query('{$alias}', '{$escaped}')",
+            DataSource::DRIVER_SQLSRV => "SELECT * FROM mssql_scan('{$alias}', '{$escaped}')",
+            DataSource::DRIVER_ORACLE => "SELECT * FROM oracle_query('{$alias}', '{$escaped}')",
+            default => throw new InvalidArgumentException("Passthrough not supported for driver [{$source->driver}]."),
+        };
+    }
+
+    /**
+     * Qualify schema and table references in SQL with the source alias catalog.
+     */
+    public function qualifySqlForSource(string $sql, DataSource $source, ?string $alias = null): string
+    {
+        $alias = $alias ?: $source->code;
+        $schema = $source->default_schema;
+
+        $qualified = $sql;
+
+        // 1. If default schema is present, qualify schema references: public.table -> alias.public.table
+        if (! empty($schema)) {
+            $pattern = '/(?<![a-zA-Z0-9_.])('.preg_quote($schema, '/').'\.)/i';
+            $qualified = (string) preg_replace($pattern, "{$alias}.$1", $qualified);
+        }
+
+        // 2. If table name appears directly without schema after FROM / JOIN
+        $knownTables = self::KNOWN_TABLES[$source->driver] ?? [];
+        foreach ($knownTables as $table) {
+            $tablePattern = '/\b(FROM|JOIN)\s+('.preg_quote($table, '/').')\b(?!\.)/i';
+            $targetTable = ! empty($schema) ? "{$alias}.{$schema}.{$table}" : "{$alias}.{$table}";
+            $qualified = (string) preg_replace($tablePattern, "$1 {$targetTable}", $qualified);
+        }
+
+        return $qualified;
+    }
+
+    /**
+     * Build single or UNION ALL query for multiple data sources.
+     * When multiple sources are selected, injects '_source_db' literal column.
+     *
+     * @param  list<DataSource>  $sources
+     * @param  array<string, mixed>  $params
+     */
+    public function buildSingleOrUnionSql(CustomView $view, array $sources, array $params): string
+    {
+        if (empty($sources)) {
+            throw new InvalidArgumentException('At least one DataSource must be selected.');
+        }
+
+        if (count($sources) === 1) {
+            $source = $sources[0];
+            $sql = $this->qualifySqlForSource($view->sql_text, $source);
+
+            return $this->bindParameters($sql, $params);
+        }
+
+        // Multi-DB UNION ALL: add '_source_db' literal column
+        $branches = [];
+        foreach ($sources as $index => $source) {
+            $sourceSql = $this->qualifySqlForSource($view->sql_text, $source);
+            $boundSql = $this->bindParameters($sourceSql, $params);
+            $branches[] = sprintf(
+                "SELECT '%s' AS _source_db, * FROM (%s) AS __src_%d",
+                $source->code,
+                $boundSql,
+                $index
+            );
+        }
+
+        return implode("\nUNION ALL\n", $branches);
+    }
+
+    /**
+     * Execute a DuckDB command via CLI and return the output or parsed JSON.
+     *
+     * @return array<mixed>|string
+     *
+     * @throws RuntimeException
+     */
+    public function runQuery(string $sql, ?string $dbFile = null, bool $json = true, int $timeout = 60): array|string
+    {
+        $duckdbBin = config('smartreport.duckdb_binary', 'duckdb');
+
+        $command = [$duckdbBin, '-batch', '-light-mode'];
+        if ($dbFile !== null && $dbFile !== '') {
+            $command = [$duckdbBin, $dbFile, '-batch', '-light-mode'];
+        }
+
+        if ($json) {
+            $command[] = '-json';
+        }
+
+        $process = new Process($command);
+        $process->setInput($sql);
+        $process->setTimeout($timeout);
+        $process->run();
+
+        if (! $process->isSuccessful()) {
+            throw new RuntimeException('DuckDB execution failed: '.$process->getErrorOutput());
+        }
+
+        $output = trim($process->getOutput());
+
+        if (! $json) {
+            return $output;
+        }
+
+        if ($output === '') {
+            return [];
+        }
+
+        // 1. Try direct JSON decoding
+        $decoded = json_decode($output, true);
+        if (is_array($decoded)) {
+            return $decoded;
+        }
+
+        // 2. If multiple statements run with -json, DuckDB outputs separate top-level JSON arrays.
+        // Split top-level arrays: ] followed by [
+        $parts = preg_split('/(?<=\])\s*(?=\[)/', $output);
+        if (! empty($parts)) {
+            $lastBlock = trim(end($parts));
+            $decoded = json_decode($lastBlock, true);
+
+            return is_array($decoded) ? $decoded : [];
+        }
+
+        return [];
+    }
+
+    /**
+     * Test live connectivity to a DataSource and report latency in milliseconds.
+     *
+     * @return array{success: bool, latency_ms: float, message: string}
+     */
+    public function testConnection(DataSource $source): array
+    {
+        $start = microtime(true);
+        try {
+            $alias = '__test_'.$source->code.'_'.bin2hex(random_bytes(4));
+            $loadSql = $this->generateLoadExtensionSql($source->driver);
+            $attachSql = $this->generateAttachSql($source, $alias);
+            $detachSql = $this->generateDetachSql($alias);
+
+            $testSql = <<<SQL
+{$loadSql}
+{$attachSql}
+SELECT 1 AS ok;
+{$detachSql}
+SQL;
+
+            $this->runQuery($testSql, null, true, 20);
+            $latency = round((microtime(true) - $start) * 1000, 2);
+
+            return [
+                'success' => true,
+                'latency_ms' => $latency,
+                'message' => "Successfully connected to {$source->name} [{$source->driver}] in {$latency} ms.",
+            ];
+        } catch (\Throwable $e) {
+            $latency = round((microtime(true) - $start) * 1000, 2);
+
+            return [
+                'success' => false,
+                'latency_ms' => $latency,
+                'message' => "Connection failed: {$e->getMessage()}",
+            ];
+        }
+    }
+}
