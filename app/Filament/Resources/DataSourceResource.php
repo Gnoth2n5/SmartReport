@@ -11,6 +11,7 @@ use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
+use Filament\Facades\Filament;
 use Filament\Forms\Components\KeyValue;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
@@ -41,6 +42,11 @@ class DataSourceResource extends Resource
     protected static ?string $modelLabel = 'Nguồn dữ liệu';
 
     protected static ?string $pluralModelLabel = 'Nguồn dữ liệu';
+
+    public static function canAccess(): bool
+    {
+        return (Filament::auth()->user() ?? auth()->user())?->isSuperAdmin() ?? false;
+    }
 
     public static function form(Schema $schema): Schema
     {

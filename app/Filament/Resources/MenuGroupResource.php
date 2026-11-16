@@ -10,6 +10,7 @@ use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
+use Filament\Facades\Filament;
 use Filament\Forms\Components\TagsInput;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
@@ -37,6 +38,11 @@ class MenuGroupResource extends Resource
     protected static ?string $modelLabel = 'Nhóm menu';
 
     protected static ?string $pluralModelLabel = 'Nhóm menu';
+
+    public static function canAccess(): bool
+    {
+        return (Filament::auth()->user() ?? auth()->user())?->isSuperAdmin() ?? false;
+    }
 
     public static function form(Schema $schema): Schema
     {

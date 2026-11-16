@@ -14,15 +14,56 @@ use Illuminate\Support\Facades\Hash;
 class SmartReportSeeder extends Seeder
 {
     /**
+     * Controls whether external Docker databases (PostgreSQL, SQL Server, Oracle)
+     * should be provisioned with realistic sample tables.
+     */
+    public static bool $seedExternal = true;
+
+    /**
+     * Cache flag to ensure external databases are provisioned at most once
+     * per PHP execution lifecycle (e.g. across test suites).
+     */
+    protected static bool $alreadyProvisioned = false;
+
+    /**
+     * Reset provision state (useful for test teardown or explicit re-provisioning).
+     */
+    public static function resetProvisionState(): void
+    {
+        static::$alreadyProvisioned = false;
+        static::$seedExternal = true;
+    }
+
+    /**
      * Run the database seeds.
      */
     public function run(): void
     {
         // 1. Provision schemas and realistic sample data on all 4 external Docker DBs
-        $provisioner = new ExternalTestDatabaseProvisioner;
-        $provisioner->provisionAll();
+        if (static::$seedExternal && ! static::$alreadyProvisioned) {
+            $provisioner = new ExternalTestDatabaseProvisioner;
+            $provisioner->provisionAll();
+            static::$alreadyProvisioned = true;
+        }
 
-        // 2. Seed 4 Data Sources
+        // 2. Seed SQLite models
+        $this->seedSqliteModels();
+    }
+
+    /**
+     * Seed all SQLite metadata models (DataSources, MenuGroups, RolePermissions, CustomViews, Users).
+     */
+    public function seedSqliteModels(): void
+    {
+        $this->seedDataSources();
+        $this->seedMenuGroups();
+        $this->seedRolePermissions();
+        $this->seedCustomViews();
+        $this->seedUsers();
+    }
+
+    public function seedDataSources(): void
+    {
         $dataSources = [
             [
                 'code' => 'pg_north',
@@ -89,8 +130,10 @@ class SmartReportSeeder extends Seeder
         foreach ($dataSources as $ds) {
             DataSource::updateOrCreate(['code' => $ds['code']], $ds);
         }
+    }
 
-        // 3. Seed Menu Groups
+    public function seedMenuGroups(): void
+    {
         $menuGroups = [
             [
                 'group_code' => 'manufacturing',
@@ -121,8 +164,10 @@ class SmartReportSeeder extends Seeder
         foreach ($menuGroups as $mg) {
             MenuGroup::updateOrCreate(['group_code' => $mg['group_code']], $mg);
         }
+    }
 
-        // 4. Seed Role Permissions
+    public function seedRolePermissions(): void
+    {
         $roles = [
             [
                 'role_code' => 'super_admin',
@@ -147,8 +192,10 @@ class SmartReportSeeder extends Seeder
         foreach ($roles as $role) {
             RolePermission::updateOrCreate(['role_code' => $role['role_code']], $role);
         }
+    }
 
-        // 5. Seed 5 Custom Views covering all 4 SELECT patterns
+    public function seedCustomViews(): void
+    {
         $customViews = [
             // Pattern 1: Single-DB or Multi-DB UNION ALL on PostgreSQL
             [
@@ -363,8 +410,10 @@ class SmartReportSeeder extends Seeder
         foreach ($customViews as $view) {
             CustomView::updateOrCreate(['view_code' => $view['view_code']], $view);
         }
+    }
 
-        // 6. Seed Default Administrator User
+    public function seedUsers(): void
+    {
         User::updateOrCreate(
             ['email' => 'admin@smartreport.test'],
             [

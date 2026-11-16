@@ -12,6 +12,7 @@ use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
+use Filament\Facades\Filament;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
@@ -24,6 +25,7 @@ use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
+use Illuminate\Auth\Access\Response;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use UnitEnum;
@@ -41,6 +43,25 @@ class RolePermissionResource extends Resource
     protected static ?string $modelLabel = 'Vai trò & Phân quyền';
 
     protected static ?string $pluralModelLabel = 'Vai trò & Phân quyền';
+
+    public static function canAccess(): bool
+    {
+        return (Filament::auth()->user() ?? auth()->user())?->isSuperAdmin() ?? false;
+    }
+
+    public static function canDelete(Model $record): bool
+    {
+        return ! (bool) ($record->is_system ?? false);
+    }
+
+    public static function getDeleteAuthorizationResponse(Model $record): Response
+    {
+        if ((bool) ($record->is_system ?? false)) {
+            return Response::deny('System roles cannot be deleted.');
+        }
+
+        return parent::getDeleteAuthorizationResponse($record);
+    }
 
     public static function form(Schema $schema): Schema
     {

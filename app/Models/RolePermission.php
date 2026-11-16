@@ -47,6 +47,18 @@ class RolePermission extends Model
     }
 
     /**
+     * Bootstrap model events.
+     */
+    protected static function booted(): void
+    {
+        static::deleting(function (self $role): void {
+            if ($role->is_system) {
+                throw new \RuntimeException("Cannot delete system role: {$role->role_code}");
+            }
+        });
+    }
+
+    /**
      * Check if this role grants permission for a given view.
      */
     public function allowsView(string $viewCode): bool
