@@ -7,12 +7,12 @@ use App\Models\CustomView;
 use App\Models\DataSource;
 use App\Models\MenuGroup;
 use App\Models\RolePermission;
+use App\Models\User;
 use BackedEnum;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
-use Filament\Facades\Filament;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
@@ -46,7 +46,7 @@ class RolePermissionResource extends Resource
 
     public static function canAccess(): bool
     {
-        return (Filament::auth()->user() ?? auth()->user())?->isSuperAdmin() ?? false;
+        return User::current()?->isSuperAdmin() ?? false;
     }
 
     public static function canDelete(Model $record): bool

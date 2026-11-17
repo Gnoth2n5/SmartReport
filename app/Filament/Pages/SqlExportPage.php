@@ -4,12 +4,12 @@ namespace App\Filament\Pages;
 
 use App\Exceptions\SqlSafetyException;
 use App\Models\DataSource;
+use App\Models\User;
 use App\Services\DuckDb\DuckDbReportEngine;
 use App\Services\DuckDb\SnapshotManager;
 use App\Services\Export\DuckDbExporter;
 use App\Services\Sql\SqlSafetyValidator;
 use BackedEnum;
-use Filament\Facades\Filament;
 use Filament\Forms\Components\Radio;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
@@ -51,7 +51,7 @@ class SqlExportPage extends Page
 
     public static function canAccess(): bool
     {
-        return (Filament::auth()->user() ?? auth()->user())?->hasAnyRole(['admin', 'super_admin']) ?? false;
+        return User::current()?->hasAnyRole(['admin', 'super_admin']) ?? false;
     }
 
     public function mount(): void

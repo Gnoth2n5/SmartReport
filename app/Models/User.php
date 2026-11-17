@@ -4,6 +4,7 @@ namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Database\Factories\UserFactory;
+use Filament\Facades\Filament;
 use Filament\Models\Contracts\FilamentUser;
 use Filament\Panel;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -18,6 +19,16 @@ class User extends Authenticatable implements FilamentUser
 {
     /** @use HasFactory<UserFactory> */
     use HasFactory, Notifiable;
+
+    /**
+     * Get the currently authenticated user instance.
+     */
+    public static function current(): ?self
+    {
+        $user = Filament::auth()->user();
+
+        return $user instanceof self ? $user : null;
+    }
 
     /**
      * Determine if the user can access the given panel.

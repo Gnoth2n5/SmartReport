@@ -11,7 +11,6 @@ use App\Services\DuckDb\SnapshotManager;
 use App\Services\Export\DuckDbExporter;
 use App\Services\Navigation\DynamicSidebarBuilder;
 use Carbon\Carbon;
-use Filament\Facades\Filament;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Panel;
@@ -549,12 +548,7 @@ class ReportRunnerPage extends Page
 
     protected function authorizeViewAccess(CustomView $view): void
     {
-        /** @var User|null $user */
-        $user = Filament::auth()->user() ?? auth()->user();
-
-        if (! $user instanceof User) {
-            abort(403);
-        }
+        $user = User::current() ?? abort(403);
 
         $permissions = RolePermission::query()
             ->whereIn('role_code', $user->roles ?? [])
@@ -640,9 +634,8 @@ class ReportRunnerPage extends Page
             return [];
         }
 
-        /** @var User|null $user */
-        $user = Filament::auth()->user() ?? auth()->user();
-        if (! $user instanceof User) {
+        $user = User::current();
+        if (! $user) {
             return [];
         }
 

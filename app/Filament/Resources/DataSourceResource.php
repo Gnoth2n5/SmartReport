@@ -4,6 +4,7 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\DataSourceResource\Pages;
 use App\Models\DataSource;
+use App\Models\User;
 use App\Services\DuckDb\DuckDbSourceAdapter;
 use BackedEnum;
 use Filament\Actions\Action;
@@ -11,7 +12,6 @@ use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
-use Filament\Facades\Filament;
 use Filament\Forms\Components\KeyValue;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
@@ -45,7 +45,7 @@ class DataSourceResource extends Resource
 
     public static function canAccess(): bool
     {
-        return (Filament::auth()->user() ?? auth()->user())?->isSuperAdmin() ?? false;
+        return User::current()?->isSuperAdmin() ?? false;
     }
 
     public static function form(Schema $schema): Schema

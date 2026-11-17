@@ -30,8 +30,7 @@ class DynamicSidebarBuilder
             return $builder;
         }
 
-        /** @var User|null $user */
-        $user = Filament::auth()->user() ?? auth()->user();
+        $user = User::current();
 
         // 2. Add Dashboard item
         $builder->items(Dashboard::getNavigationItems());

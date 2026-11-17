@@ -5,12 +5,12 @@ namespace App\Filament\Resources;
 use App\Filament\Resources\MenuGroupResource\Pages;
 use App\Models\MenuGroup;
 use App\Models\RolePermission;
+use App\Models\User;
 use BackedEnum;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
-use Filament\Facades\Filament;
 use Filament\Forms\Components\TagsInput;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
@@ -41,7 +41,7 @@ class MenuGroupResource extends Resource
 
     public static function canAccess(): bool
     {
-        return (Filament::auth()->user() ?? auth()->user())?->isSuperAdmin() ?? false;
+        return User::current()?->isSuperAdmin() ?? false;
     }
 
     public static function form(Schema $schema): Schema
