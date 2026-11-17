@@ -62,6 +62,7 @@ class CustomViewResource extends Resource
     public static function form(Schema $schema): Schema
     {
         return $schema
+            ->columns(1)
             ->components([
                 // 1. General Information
                 Section::make('Thông tin chung')
@@ -195,7 +196,7 @@ class CustomViewResource extends Resource
                                 Grid::make(['default' => 1, 'md' => 3])
                                     ->schema([
                                         TextInput::make('name')
-                                            ->label('Tên tham số (Parameter Name / @param)')
+                                            ->label('Tên tham số (@param)')
                                             ->required()
                                             ->placeholder('vd: Status'),
                                         TextInput::make('label')
@@ -253,21 +254,25 @@ class CustomViewResource extends Resource
     {
         return $table
             ->columns([
+                TextColumn::make('view_name')
+                    ->label('Báo cáo')
+                    ->description(fn (CustomView $record): string => $record->view_code)
+                    ->sortable()
+                    ->searchable(['view_name', 'view_code'])
+                    ->wrap(),
                 TextColumn::make('view_code')
                     ->label('Mã báo cáo')
                     ->sortable()
                     ->searchable()
-                    ->copyable(),
-                TextColumn::make('view_name')
-                    ->label('Tên báo cáo')
-                    ->sortable()
-                    ->searchable()
-                    ->wrap(),
+                    ->copyable()
+                    ->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('menuGroup.title')
                     ->label('Nhóm Menu')
                     ->sortable()
                     ->badge()
-                    ->placeholder('—'),
+                    ->placeholder('—')
+                    ->visibleFrom('xl')
+                    ->toggleable(),
                 TextColumn::make('execution_mode')
                     ->label('Chế độ')
                     ->badge()
@@ -284,7 +289,8 @@ class CustomViewResource extends Resource
                     ->sortable(),
                 TextColumn::make('version')
                     ->label('Phiên bản')
-                    ->sortable(),
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
                 IconColumn::make('is_active')
                     ->label('Kích hoạt')
                     ->boolean()
@@ -309,9 +315,9 @@ class CustomViewResource extends Resource
                     ->label('Trạng thái kích hoạt'),
             ])
             ->recordActions([
-                static::getTestSqlPreviewAction('test_sql'),
-                EditAction::make(),
-                DeleteAction::make(),
+                static::getTestSqlPreviewAction('test_sql', 'Chạy thử'),
+                EditAction::make()->iconButton()->tooltip('Chỉnh sửa'),
+                DeleteAction::make()->iconButton()->tooltip('Xóa'),
             ])
             ->toolbarActions([
                 BulkActionGroup::make([
@@ -436,10 +442,10 @@ class CustomViewResource extends Resource
     /**
      * Action 2: Test SQL 10-Row Preview Action builder.
      */
-    public static function getTestSqlPreviewAction(?string $name = 'preview_sql'): Action
+    public static function getTestSqlPreviewAction(?string $name = 'preview_sql', string $label = 'Chạy thử SQL (Test 10 dòng)'): Action
     {
         return Action::make($name)
-            ->label('Chạy thử SQL (Test 10 dòng)')
+            ->label($label)
             ->icon('heroicon-o-play')
             ->color('success')
             ->modalHeading('Kết quả chạy thử SQL (10 dòng đầu tiên)')

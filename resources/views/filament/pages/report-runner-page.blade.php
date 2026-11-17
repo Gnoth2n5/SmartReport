@@ -27,15 +27,28 @@
 
         .sr-source-option {
             display: flex;
-            flex-wrap: wrap;
-            align-items: center;
-            gap: 0.5rem 0.625rem;
+            align-items: flex-start;
+            gap: 0.625rem;
             padding: 0.625rem 0.75rem;
             border: 1px solid var(--gray-200);
             border-radius: 0.5rem;
             background: var(--gray-50);
             cursor: pointer;
             font-size: 0.875rem;
+            min-width: 0;
+        }
+
+        .sr-source-option input[type="checkbox"] {
+            margin-top: 0.2rem;
+            flex-shrink: 0;
+        }
+
+        .sr-source-option-body {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.375rem 0.5rem;
+            flex: 1 1 0%;
             min-width: 0;
             word-break: break-word;
         }
@@ -168,8 +181,41 @@
             color: #fecaca;
         }
 
+        .sr-table-card {
+            display: flex !important;
+            flex-direction: column !important;
+            width: 100%;
+            min-width: 0;
+            overflow: hidden;
+        }
+
         .sr-table-scroll {
+            width: 100%;
             overflow-x: auto;
+        }
+
+        .sr-pagination-bar {
+            width: 100%;
+            padding: 0.75rem 1rem !important;
+            display: flex !important;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.75rem;
+            border-top: 1px solid var(--gray-200);
+        }
+
+        .sr-pagination-bar .fi-pagination-overview {
+            display: inline-block !important;
+        }
+
+        .sr-pagination-bar .fi-pagination-previous-btn,
+        .sr-pagination-bar .fi-pagination-next-btn {
+            display: inline-flex !important;
+        }
+
+        .dark .sr-pagination-bar {
+            border-top-color: var(--gray-700);
         }
 
         .sr-cell-wrap {
@@ -247,10 +293,12 @@
                                             value="{{ $source->code }}"
                                             wire:model="selectedSources"
                                         />
-                                        <span style="font-weight: 600;">{{ $source->name }}</span>
-                                        <x-filament::badge color="info" size="sm">
-                                            {{ $source->code }} · {{ $source->driver }}
-                                        </x-filament::badge>
+                                        <span class="sr-source-option-body">
+                                            <span style="font-weight: 600;">{{ $source->name }}</span>
+                                            <x-filament::badge color="info" size="sm">
+                                                {{ $source->code }} · {{ $source->driver }}
+                                            </x-filament::badge>
+                                        </span>
                                     </label>
                                 @endforeach
                             </div>
@@ -369,7 +417,7 @@
             @endif
 
             <div class="fi-ta">
-                <div class="fi-ta-ctn">
+                <div class="fi-ta-ctn sr-table-card">
                     <div class="fi-ta-content-ctn sr-table-scroll">
                         @if (count($rows) > 0)
                             <table class="fi-ta-table">
@@ -418,7 +466,7 @@
                         @endif
                     </div>
 
-                    <div class="fi-pagination" style="padding: 0.75rem 1rem; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.75rem;">
+                    <div class="fi-pagination fi-simple sr-pagination-bar">
                         <span class="fi-pagination-overview">
                             Trang {{ $currentPage }} / {{ $totalPages }} (Tổng số: {{ number_format($totalRows) }} dòng)
                         </span>
@@ -498,7 +546,7 @@
             >
                 @if ($connectedSources->isNotEmpty())
                     <div class="fi-ta">
-                        <div class="fi-ta-ctn">
+                        <div class="fi-ta-ctn sr-table-card">
                             <div class="fi-ta-content-ctn sr-table-scroll">
                                 <table class="fi-ta-table">
                                     <thead>

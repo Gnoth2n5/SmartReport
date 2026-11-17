@@ -72,7 +72,7 @@ class SqlExportPage extends Page
 
     public function form(Schema $schema): Schema
     {
-        return $schema->components([
+        return $schema->columns(1)->components([
             Section::make('Truy vấn & Cấu hình xuất dữ liệu')
                 ->description('Thực thi câu lệnh SELECT/WITH trực tiếp qua DuckDB và xuất kết quả ra tệp Excel (.xlsx), CSV (UTF-8 BOM) hoặc ZIP chia nhỏ.')
                 ->icon('heroicon-o-command-line')
