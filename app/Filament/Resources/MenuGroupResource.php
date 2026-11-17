@@ -50,7 +50,7 @@ class MenuGroupResource extends Resource
             ->components([
                 Section::make('Thông tin nhóm Menu')
                     ->schema([
-                        Grid::make(2)
+                        Grid::make(['default' => 1, 'sm' => 2])
                             ->schema([
                                 TextInput::make('group_code')
                                     ->label('Mã nhóm Menu')

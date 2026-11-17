@@ -67,7 +67,7 @@ class CustomViewResource extends Resource
                 Section::make('Thông tin chung')
                     ->description('Cấu hình định danh, tên gọi và phân loại báo cáo')
                     ->schema([
-                        Grid::make(3)
+                        Grid::make(['default' => 1, 'md' => 3])
                             ->schema([
                                 TextInput::make('view_code')
                                     ->label('Mã báo cáo (View Code)')
@@ -89,7 +89,7 @@ class CustomViewResource extends Resource
                                     ->nullable()
                                     ->placeholder('Chọn nhóm phân loại'),
                             ]),
-                        Grid::make(2)
+                        Grid::make(['default' => 1, 'sm' => 2])
                             ->schema([
                                 TextInput::make('version')
                                     ->label('Phiên bản')
@@ -109,7 +109,7 @@ class CustomViewResource extends Resource
 
                 // 2. Execution Mode & Data Source Configuration
                 Section::make('Cấu hình Chế độ Thực thi & Nguồn Dữ liệu')
-                    ->description('Chọn chế độ Single/Union DB hoặc Cross-Engine Federated Join')
+                    ->description('Chọn chế độ Single/Union DB hoặc Cross-Engine Federated JOIN')
                     ->schema([
                         Select::make('execution_mode')
                             ->label('Chế độ thực thi (Execution Mode)')
@@ -123,7 +123,7 @@ class CustomViewResource extends Resource
                             ->live(),
 
                         // Mode A: Single or Union configuration
-                        Grid::make(2)
+                        Grid::make(['default' => 1, 'md' => 2])
                             ->schema([
                                 Select::make('allowed_sources')
                                     ->label('Nguồn dữ liệu cho phép (Allowed Sources)')
@@ -159,9 +159,10 @@ class CustomViewResource extends Resource
                                     ->label('Câu lệnh SQL nguồn (Query / SQL Text)')
                                     ->required()
                                     ->rows(3)
-                                    ->placeholder('SELECT EMP_NO, FULL_NAME FROM APP.EMPLOYEES WHERE ...'),
+                                    ->placeholder('SELECT EMP_NO, FULL_NAME FROM APP.EMPLOYEES WHERE ...')
+                                    ->columnSpanFull(),
                             ])
-                            ->columns(3)
+                            ->columns(['default' => 1, 'sm' => 2])
                             ->visible(fn (Get $get): bool => $get('execution_mode') === CustomView::MODE_FEDERATED_JOIN)
                             ->addActionLabel('Thêm truy vấn nguồn DB')
                             ->defaultItems(2),
@@ -191,7 +192,7 @@ class CustomViewResource extends Resource
                         Repeater::make('filters')
                             ->label('Danh sách bộ lọc')
                             ->schema([
-                                Grid::make(3)
+                                Grid::make(['default' => 1, 'md' => 3])
                                     ->schema([
                                         TextInput::make('name')
                                             ->label('Tên tham số (Parameter Name / @param)')
@@ -213,7 +214,7 @@ class CustomViewResource extends Resource
                                             ->required()
                                             ->live(),
                                     ]),
-                                Grid::make(2)
+                                Grid::make(['default' => 1, 'sm' => 2])
                                     ->schema([
                                         TextInput::make('default_value')
                                             ->label('Giá trị mặc định')

@@ -69,7 +69,7 @@ class RolePermissionResource extends Resource
             ->components([
                 Section::make('Thông tin vai trò')
                     ->schema([
-                        Grid::make(2)
+                        Grid::make(['default' => 1, 'sm' => 2])
                             ->schema([
                                 TextInput::make('role_code')
                                     ->label('Mã vai trò')

@@ -4,24 +4,40 @@
             display: flex;
             flex-direction: column;
             gap: 1.25rem;
+            min-width: 0;
+            max-width: 100%;
+        }
+
+        .sr-stack > * {
+            min-width: 0;
+            max-width: 100%;
+        }
+
+        .sr-tabs-wrap {
+            overflow-x: auto;
+            max-width: 100%;
+            -webkit-overflow-scrolling: touch;
         }
 
         .sr-source-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+            grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr));
             gap: 0.75rem;
         }
 
         .sr-source-option {
             display: flex;
+            flex-wrap: wrap;
             align-items: center;
-            gap: 0.625rem;
+            gap: 0.5rem 0.625rem;
             padding: 0.625rem 0.75rem;
             border: 1px solid var(--gray-200);
             border-radius: 0.5rem;
             background: var(--gray-50);
             cursor: pointer;
             font-size: 0.875rem;
+            min-width: 0;
+            word-break: break-word;
         }
 
         .dark .sr-source-option {
@@ -31,7 +47,7 @@
 
         .sr-filter-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+            grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr));
             gap: 1rem;
         }
 
@@ -39,6 +55,7 @@
             display: flex;
             flex-direction: column;
             gap: 0.375rem;
+            min-width: 0;
         }
 
         .sr-label {
@@ -72,9 +89,20 @@
             gap: 0.5rem;
         }
 
+        @media (max-width: 640px) {
+            .sr-toolbar-group {
+                width: 100%;
+            }
+
+            .sr-toolbar-group > * {
+                flex: 1 1 auto;
+                justify-content: center;
+            }
+        }
+
         .sr-kv-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+            grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr));
             gap: 1rem;
         }
 
@@ -83,6 +111,7 @@
             border: 1px solid var(--gray-200);
             border-radius: 0.5rem;
             background: var(--gray-50);
+            min-width: 0;
         }
 
         .dark .sr-kv-card {
@@ -172,31 +201,33 @@
     @endphp
 
     <div class="sr-stack">
-        <x-filament::tabs :contained="true">
-            <x-filament::tabs.item
-                :active="$activeTab === 'overview'"
-                wire:click="setActiveTab('overview')"
-                icon="heroicon-o-table-cells"
-            >
-                Tổng quan
-            </x-filament::tabs.item>
+        <div class="sr-tabs-wrap">
+            <x-filament::tabs :contained="true">
+                <x-filament::tabs.item
+                    :active="$activeTab === 'overview'"
+                    wire:click="setActiveTab('overview')"
+                    icon="heroicon-o-table-cells"
+                >
+                    Tổng quan
+                </x-filament::tabs.item>
 
-            <x-filament::tabs.item
-                :active="$activeTab === 'app_info'"
-                wire:click="setActiveTab('app_info')"
-                icon="heroicon-o-information-circle"
-            >
-                Application Information
-            </x-filament::tabs.item>
+                <x-filament::tabs.item
+                    :active="$activeTab === 'app_info'"
+                    wire:click="setActiveTab('app_info')"
+                    icon="heroicon-o-information-circle"
+                >
+                    Application Information
+                </x-filament::tabs.item>
 
-            <x-filament::tabs.item
-                :active="$activeTab === 'sql_inspector'"
-                wire:click="setActiveTab('sql_inspector')"
-                icon="heroicon-o-code-bracket"
-            >
-                SQL Query
-            </x-filament::tabs.item>
-        </x-filament::tabs>
+                <x-filament::tabs.item
+                    :active="$activeTab === 'sql_inspector'"
+                    wire:click="setActiveTab('sql_inspector')"
+                    icon="heroicon-o-code-bracket"
+                >
+                    SQL Query
+                </x-filament::tabs.item>
+            </x-filament::tabs>
+        </div>
 
         {{-- TAB 1: TỔNG QUAN --}}
         @if ($activeTab === 'overview')
@@ -574,14 +605,14 @@
                     @forelse ($individualSourceQueries as $sq)
                         <div>
                             <div class="sr-section-subhead">
-                                <div style="display: flex; align-items: center; gap: 0.5rem;">
+                                <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; min-width: 0;">
                                     <x-filament::badge color="info" size="sm">
                                         {{ $sq['source_code'] }}
                                     </x-filament::badge>
                                     <x-filament::badge color="gray" size="sm">
                                         {{ $sq['driver'] }}
                                     </x-filament::badge>
-                                    <span style="font-size: 0.875rem; font-weight: 600;">
+                                    <span style="font-size: 0.875rem; font-weight: 600; word-break: break-word;">
                                         Alias: {{ $sq['alias'] }} ({{ $sq['source_name'] }})
                                     </span>
                                 </div>

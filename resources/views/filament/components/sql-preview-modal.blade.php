@@ -52,10 +52,10 @@
 
         {{-- Applied Parameters --}}
         @if(!empty($params))
-            <div class="text-xs text-gray-600 dark:text-gray-300 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 p-2.5 rounded">
+            <div class="flex flex-wrap items-center gap-2 text-xs text-gray-600 dark:text-gray-300 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 p-2.5 rounded">
                 <span class="font-semibold text-blue-700 dark:text-blue-300">Tham số áp dụng:</span>
                 @foreach($params as $k => $v)
-                    <span class="font-mono ml-2">@{{ $k }} = {{ $v === null ? 'NULL' : (is_scalar($v) ? $v : json_encode($v)) }}</span>
+                    <span class="font-mono break-all">@{{ $k }} = {{ $v === null ? 'NULL' : (is_scalar($v) ? $v : json_encode($v)) }}</span>
                 @endforeach
             </div>
         @endif

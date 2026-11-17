@@ -54,7 +54,7 @@ class DataSourceResource extends Resource
             ->components([
                 Section::make('Thông tin cơ bản')
                     ->schema([
-                        Grid::make(2)
+                        Grid::make(['default' => 1, 'sm' => 2])
                             ->schema([
                                 TextInput::make('code')
                                     ->label('Mã nguồn dữ liệu')
@@ -75,21 +75,19 @@ class DataSourceResource extends Resource
                                         DataSource::DRIVER_ORACLE => 'Oracle (oracle)',
                                     ])
                                     ->required()
-                                    ->in(DataSource::ALLOWED_DRIVERS),
-                                Grid::make(2)
-                                    ->schema([
-                                        Toggle::make('is_read_only')
-                                            ->label('Chỉ đọc (Read Only)')
-                                            ->default(true),
-                                        Toggle::make('is_active')
-                                            ->label('Kích hoạt')
-                                            ->default(true),
-                                    ]),
+                                    ->in(DataSource::ALLOWED_DRIVERS)
+                                    ->columnSpanFull(),
+                                Toggle::make('is_read_only')
+                                    ->label('Chỉ đọc (Read Only)')
+                                    ->default(true),
+                                Toggle::make('is_active')
+                                    ->label('Kích hoạt')
+                                    ->default(true),
                             ]),
                     ]),
                 Section::make('Thông số kết nối')
                     ->schema([
-                        Grid::make(2)
+                        Grid::make(['default' => 1, 'sm' => 2])
                             ->schema([
                                 TextInput::make('host')
                                     ->label('Máy chủ / Host')
@@ -165,20 +163,25 @@ class DataSourceResource extends Resource
                     ->sortable(),
                 TextColumn::make('host')
                     ->label('Host')
-                    ->searchable(),
+                    ->searchable()
+                    ->toggleable(),
                 TextColumn::make('port')
                     ->label('Port')
-                    ->sortable(),
+                    ->sortable()
+                    ->toggleable(),
                 TextColumn::make('database_name')
                     ->label('Database')
-                    ->placeholder('—'),
+                    ->placeholder('—')
+                    ->toggleable(),
                 TextColumn::make('service_name')
                     ->label('Service')
-                    ->placeholder('—'),
+                    ->placeholder('—')
+                    ->toggleable(isToggledHiddenByDefault: true),
                 IconColumn::make('is_read_only')
                     ->label('Chỉ đọc')
                     ->boolean()
-                    ->sortable(),
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
                 IconColumn::make('is_active')
                     ->label('Kích hoạt')
                     ->boolean()

@@ -92,7 +92,7 @@ class SqlExportPage extends Page
                             'style' => 'font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 0.875rem;',
                         ]),
 
-                    Grid::make(3)
+                    Grid::make(['default' => 1, 'md' => 3])
                         ->schema([
                             Radio::make('export_format')
                                 ->label('Export Format')

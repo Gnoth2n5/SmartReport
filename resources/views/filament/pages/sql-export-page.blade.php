@@ -4,6 +4,8 @@
             display: flex;
             flex-direction: column;
             gap: 1.5rem;
+            min-width: 0;
+            max-width: 100%;
         }
 
         .sr-export-actions {
@@ -16,7 +18,7 @@
 
         .sr-hint-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+            grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr));
             gap: 0.75rem;
         }
 
@@ -26,6 +28,8 @@
             border-radius: 0.5rem;
             background: var(--gray-50);
             font-size: 0.8125rem;
+            min-width: 0;
+            word-break: break-word;
         }
 
         .dark .sr-hint-card {
@@ -37,6 +41,7 @@
             font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
             font-size: 0.75rem;
             color: var(--primary-600);
+            overflow-wrap: anywhere;
         }
 
         .dark .sr-hint-code {
