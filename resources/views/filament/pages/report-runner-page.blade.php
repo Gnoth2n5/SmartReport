@@ -601,38 +601,14 @@
                 <div
                     x-data="{
                         copied: false,
-                        markCopied() {
-                            this.copied = true;
-                            setTimeout(() => { this.copied = false; }, 2000);
-                        },
-                        fallbackCopy(text) {
-                            const textarea = document.createElement('textarea');
-                            textarea.value = text;
-                            textarea.setAttribute('readonly', '');
-                            textarea.style.position = 'fixed';
-                            textarea.style.left = '-9999px';
-                            document.body.appendChild(textarea);
-                            textarea.select();
-                            try {
-                                if (document.execCommand('copy')) {
-                                    this.markCopied();
-                                }
-                            } finally {
-                                document.body.removeChild(textarea);
-                            }
-                        },
                         copySql() {
-                            const text = this.$refs.federatedSql ? this.$refs.federatedSql.innerText : '';
-                            if (!text) {
-                                return;
+                            const text = this.$refs.federatedSql?.innerText || '';
+                            if (text && navigator.clipboard) {
+                                navigator.clipboard.writeText(text).then(() => {
+                                    this.copied = true;
+                                    setTimeout(() => { this.copied = false; }, 2000);
+                                });
                             }
-                            if (navigator.clipboard && navigator.clipboard.writeText) {
-                                navigator.clipboard.writeText(text)
-                                    .then(() => this.markCopied())
-                                    .catch(() => this.fallbackCopy(text));
-                                return;
-                            }
-                            this.fallbackCopy(text);
                         }
                     }"
                     class="sr-stack"

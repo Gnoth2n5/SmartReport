@@ -85,16 +85,6 @@ class SqlSafetyValidator
     }
 
     /**
-     * Alias for validate().
-     *
-     * @throws SqlSafetyException
-     */
-    public function assertSafe(string $sql): void
-    {
-        $this->validate($sql);
-    }
-
-    /**
      * Check if a SQL string is safe to execute.
      *
      * @param  list<string>|null  $violations

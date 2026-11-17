@@ -127,22 +127,15 @@ class DuckDbReportEngine
             $detachStatements[] = $this->adapter->generateDetachSql($source);
         }
 
-        $scriptParts = [
-            implode("\n", array_values($loadStatements)),
-            implode("\n", $attachStatements),
-            sprintf("CREATE TEMPORARY TABLE __adhoc_result AS (\n%s\n);", $executableSql),
-            implode("\n", $detachStatements),
-            'SET enable_external_access = false;',
-            'CREATE TABLE report_result AS SELECT row_number() OVER ()::INTEGER AS __row_id, * FROM __adhoc_result;',
-            'CREATE UNIQUE INDEX idx_report_result_row_id ON report_result (__row_id);',
-            'CREATE TABLE report_meta (snapshot_id VARCHAR, view_code VARCHAR, total_rows BIGINT, created_at TIMESTAMP, columns JSON);',
-            sprintf(
-                "INSERT INTO report_meta SELECT '%s' AS snapshot_id, 'adhoc_sql_export' AS view_code, (SELECT count(*) FROM report_result) AS total_rows, timezone('UTC', current_timestamp) AS created_at, (SELECT to_json(list(column_name)) FROM (SELECT column_name FROM information_schema.columns WHERE table_name = 'report_result' AND column_name != '__row_id' ORDER BY ordinal_position)) AS columns;",
-                $snapshotId
-            ),
+        $plan = [
+            'load_statements' => $loadStatements,
+            'attach_statements' => $attachStatements,
+            'detach_statements' => $detachStatements,
+            'staging_sql' => [sprintf("CREATE TEMPORARY TABLE __adhoc_result AS (\n%s\n);", $executableSql)],
+            'final_query' => 'SELECT * FROM __adhoc_result',
         ];
 
-        $fullScript = implode("\n\n", array_filter($scriptParts));
+        $fullScript = $this->assembleFederationScript($plan, $snapshotId, 'adhoc_sql_export');
 
         try {
             $this->adapter->runQuery($fullScript, $snapshotPath, false, 120);

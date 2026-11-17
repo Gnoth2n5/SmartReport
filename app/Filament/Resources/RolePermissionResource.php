@@ -178,18 +178,10 @@ class RolePermissionResource extends Resource
 
     public static function resolveRecordRouteBinding(int|string $key, ?\Closure $modifyQuery = null): ?Model
     {
-        $query = static::getRecordRouteBindingEloquentQuery();
-
-        if ($modifyQuery) {
-            $query = $modifyQuery($query) ?? $query;
-        }
-
-        return $query->where(function ($q) use ($key): void {
-            $q->where('role_code', $key);
-            if (is_numeric($key)) {
-                $q->orWhere('id', $key);
-            }
-        })->first();
+        return static::getRecordRouteBindingEloquentQuery()
+            ->where('role_code', $key)
+            ->when(is_numeric($key), fn ($q) => $q->orWhere('id', $key))
+            ->first();
     }
 
     public static function getPages(): array

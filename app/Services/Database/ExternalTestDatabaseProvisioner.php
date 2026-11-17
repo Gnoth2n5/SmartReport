@@ -2,16 +2,13 @@
 
 namespace App\Services\Database;
 
-use RuntimeException;
-use Symfony\Component\Process\Process;
+use App\Services\DuckDb\DuckDbSourceAdapter;
 
 class ExternalTestDatabaseProvisioner
 {
-    protected string $duckdbBinary;
-
-    public function __construct(?string $duckdbBinary = null)
+    public function __construct(protected ?DuckDbSourceAdapter $adapter = null)
     {
-        $this->duckdbBinary = $duckdbBinary ?? config('smartreport.duckdb_binary', 'duckdb');
+        $this->adapter ??= app(DuckDbSourceAdapter::class);
     }
 
     /**
@@ -409,34 +406,8 @@ SQL;
         return 30;
     }
 
-    /**
-     * Execute a DuckDB SQL script via the CLI process.
-     */
     protected function executeDuckDbSql(string $sql): string
     {
-        $command = [$this->duckdbBinary, '-batch', '-light-mode'];
-
-        $home = getenv('HOME');
-        if (! is_string($home) || $home === '') {
-            $pw = function_exists('posix_geteuid') && function_exists('posix_getpwuid')
-                ? posix_getpwuid(posix_geteuid())
-                : null;
-            $home = is_array($pw) && ! empty($pw['dir']) ? (string) $pw['dir'] : sys_get_temp_dir();
-        }
-
-        $process = new Process($command, null, ['HOME' => $home]);
-        $process->setInput($sql);
-        $process->setTimeout(60);
-        $process->run();
-
-        if (! $process->isSuccessful()) {
-            throw new RuntimeException(
-                "DuckDB execution failed (Exit code {$process->getExitCode()}):\n".
-                "STDOUT: {$process->getOutput()}\n".
-                "STDERR: {$process->getErrorOutput()}"
-            );
-        }
-
-        return $process->getOutput();
+        return (string) $this->adapter->runQuery($sql, null, false, 60);
     }
 }

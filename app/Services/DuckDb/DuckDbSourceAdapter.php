@@ -2,7 +2,6 @@
 
 namespace App\Services\DuckDb;
 
-use App\Models\CustomView;
 use App\Models\DataSource;
 use InvalidArgumentException;
 use RuntimeException;
@@ -162,24 +161,6 @@ class DuckDbSourceAdapter
     }
 
     /**
-     * Build native dialect passthrough query (postgres_query, mssql_scan, oracle_query).
-     * Note: Oracle queries must have trailing semicolons trimmed.
-     */
-    public function buildPassthroughQuery(DataSource $source, string $query, ?string $alias = null): string
-    {
-        $alias = $alias ?: $source->code;
-        $trimmed = rtrim(trim($query), ';');
-        $escaped = str_replace("'", "''", $trimmed);
-
-        return match ($source->driver) {
-            DataSource::DRIVER_PGSQL => "SELECT * FROM postgres_query('{$alias}', '{$escaped}')",
-            DataSource::DRIVER_SQLSRV => "SELECT * FROM mssql_scan('{$alias}', '{$escaped}')",
-            DataSource::DRIVER_ORACLE => "SELECT * FROM oracle_query('{$alias}', '{$escaped}')",
-            default => throw new InvalidArgumentException("Passthrough not supported for driver [{$source->driver}]."),
-        };
-    }
-
-    /**
      * Qualify schema and table references in SQL with the source alias catalog.
      */
     public function qualifySqlForSource(string $sql, DataSource $source, ?string $alias = null): string
@@ -204,42 +185,6 @@ class DuckDbSourceAdapter
         }
 
         return $qualified;
-    }
-
-    /**
-     * Build single or UNION ALL query for multiple data sources.
-     * When multiple sources are selected, injects '_source_db' literal column.
-     *
-     * @param  list<DataSource>  $sources
-     * @param  array<string, mixed>  $params
-     */
-    public function buildSingleOrUnionSql(CustomView $view, array $sources, array $params): string
-    {
-        if (empty($sources)) {
-            throw new InvalidArgumentException('At least one DataSource must be selected.');
-        }
-
-        if (count($sources) === 1) {
-            $source = $sources[0];
-            $sql = $this->qualifySqlForSource($view->sql_text, $source);
-
-            return $this->bindParameters($sql, $params);
-        }
-
-        // Multi-DB UNION ALL: add '_source_db' literal column
-        $branches = [];
-        foreach ($sources as $index => $source) {
-            $sourceSql = $this->qualifySqlForSource($view->sql_text, $source);
-            $boundSql = $this->bindParameters($sourceSql, $params);
-            $branches[] = sprintf(
-                "SELECT '%s' AS _source_db, * FROM (%s) AS __src_%d",
-                $source->code,
-                $boundSql,
-                $index
-            );
-        }
-
-        return implode("\nUNION ALL\n", $branches);
     }
 
     /**

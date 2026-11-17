@@ -198,26 +198,7 @@ class DataSourceResource extends Resource
                     ->label('Chỉ đọc (Read Only)'),
             ])
             ->recordActions([
-                Action::make('test_connection')
-                    ->label('Kiểm tra kết nối')
-                    ->icon('heroicon-o-bolt')
-                    ->color('info')
-                    ->action(function (DataSource $record, DuckDbSourceAdapter $adapter): void {
-                        $result = $adapter->testConnection($record);
-                        if ($result['success']) {
-                            Notification::make()
-                                ->title('Kết nối thành công')
-                                ->body("{$record->name} [{$record->driver}]: {$result['latency_ms']} ms")
-                                ->success()
-                                ->send();
-                        } else {
-                            Notification::make()
-                                ->title('Kết nối thất bại')
-                                ->body($result['message'])
-                                ->danger()
-                                ->send();
-                        }
-                    }),
+                static::getTestConnectionAction(),
                 EditAction::make(),
                 DeleteAction::make(),
             ])
@@ -228,6 +209,30 @@ class DataSourceResource extends Resource
             ]);
     }
 
+    public static function getTestConnectionAction(): Action
+    {
+        return Action::make('test_connection')
+            ->label('Kiểm tra kết nối')
+            ->icon('heroicon-o-bolt')
+            ->color('info')
+            ->action(function (DataSource $record, DuckDbSourceAdapter $adapter): void {
+                $result = $adapter->testConnection($record);
+                if ($result['success']) {
+                    Notification::make()
+                        ->title('Kết nối thành công')
+                        ->body("{$record->name} [{$record->driver}]: {$result['latency_ms']} ms")
+                        ->success()
+                        ->send();
+                } else {
+                    Notification::make()
+                        ->title('Kết nối thất bại')
+                        ->body($result['message'])
+                        ->danger()
+                        ->send();
+                }
+            });
+    }
+
     public static function getRecordRouteKeyName(): ?string
     {
         return 'code';
@@ -235,18 +240,10 @@ class DataSourceResource extends Resource
 
     public static function resolveRecordRouteBinding(int|string $key, ?\Closure $modifyQuery = null): ?Model
     {
-        $query = static::getRecordRouteBindingEloquentQuery();
-
-        if ($modifyQuery) {
-            $query = $modifyQuery($query) ?? $query;
-        }
-
-        return $query->where(function ($q) use ($key): void {
-            $q->where('code', $key);
-            if (is_numeric($key)) {
-                $q->orWhere('id', $key);
-            }
-        })->first();
+        return static::getRecordRouteBindingEloquentQuery()
+            ->where('code', $key)
+            ->when(is_numeric($key), fn ($q) => $q->orWhere('id', $key))
+            ->first();
     }
 
     public static function getPages(): array

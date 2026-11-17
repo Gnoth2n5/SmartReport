@@ -24,14 +24,12 @@ class Cluster1EnvironmentAndSeedTest extends TestCase
         $config = config('smartreport');
 
         $this->assertIsArray($config);
-        $this->assertArrayHasKey('allowed_drivers', $config);
         $this->assertArrayHasKey('duckdb_binary', $config);
         $this->assertArrayHasKey('snapshot_dir', $config);
         $this->assertArrayHasKey('snapshot_ttl_minutes', $config);
         $this->assertArrayHasKey('page_size', $config);
 
-        $allowedDrivers = $config['allowed_drivers'];
-        $this->assertEquals(['sqlsrv' => 'SQL Server', 'pgsql' => 'PostgreSQL', 'oracle' => 'Oracle'], $allowedDrivers);
+        $this->assertSame(['sqlsrv', 'pgsql', 'oracle'], DataSource::ALLOWED_DRIVERS);
         $this->assertSame(10, $config['page_size']);
         $this->assertSame(30, $config['snapshot_ttl_minutes']);
 

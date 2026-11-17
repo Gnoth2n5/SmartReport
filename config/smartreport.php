@@ -3,21 +3,6 @@
 return [
     /*
     |--------------------------------------------------------------------------
-    | Allowed Database Drivers
-    |--------------------------------------------------------------------------
-    |
-    | SmartReport strictly restricts data sources to the following 3 enterprise
-    | database drivers. Any other driver is rejected.
-    |
-    */
-    'allowed_drivers' => [
-        'sqlsrv' => 'SQL Server',
-        'pgsql' => 'PostgreSQL',
-        'oracle' => 'Oracle',
-    ],
-
-    /*
-    |--------------------------------------------------------------------------
     | DuckDB 2.0 Binary Path
     |--------------------------------------------------------------------------
     |

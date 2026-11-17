@@ -19,7 +19,7 @@ class DuckDbExporter
     /**
      * Export snapshot rows to an OpenXML (.xlsx) Excel spreadsheet using DuckDB's excel extension.
      */
-    public function exportExcel(string $snapshotId, string $targetPath): string
+    public function exportExcel(string $snapshotId, string $targetPath, ?int $limit = null, int $offset = 0): string
     {
         $this->ensureSnapshotExists($snapshotId);
         $this->prepareDirectoryForFile($targetPath);
@@ -29,8 +29,10 @@ class DuckDbExporter
             @unlink($targetPath);
         }
 
+        $slice = $limit !== null ? sprintf(' LIMIT %d OFFSET %d', $limit, $offset) : '';
         $sql = sprintf(
-            "LOAD excel;\nCOPY (SELECT * EXCLUDE (__row_id) FROM report_result ORDER BY __row_id) TO '%s' WITH (FORMAT xlsx, HEADER true, SHEET 'SmartReport');",
+            "LOAD excel;\nCOPY (SELECT * EXCLUDE (__row_id) FROM report_result ORDER BY __row_id%s) TO '%s' WITH (FORMAT xlsx, HEADER true, SHEET 'SmartReport');",
+            $slice,
             $targetPath
         );
 
@@ -42,7 +44,7 @@ class DuckDbExporter
     /**
      * Export snapshot rows to CSV with UTF-8 BOM prefix (\xEF\xBB\xBF) for Vietnamese Excel rendering.
      */
-    public function exportCsv(string $snapshotId, string $targetPath): string
+    public function exportCsv(string $snapshotId, string $targetPath, ?int $limit = null, int $offset = 0): string
     {
         $this->ensureSnapshotExists($snapshotId);
         $this->prepareDirectoryForFile($targetPath);
@@ -52,8 +54,10 @@ class DuckDbExporter
             @unlink($targetPath);
         }
 
+        $slice = $limit !== null ? sprintf(' LIMIT %d OFFSET %d', $limit, $offset) : '';
         $sql = sprintf(
-            "COPY (SELECT * EXCLUDE (__row_id) FROM report_result ORDER BY __row_id) TO '%s' WITH (FORMAT csv, HEADER true, DELIMITER ',');",
+            "COPY (SELECT * EXCLUDE (__row_id) FROM report_result ORDER BY __row_id%s) TO '%s' WITH (FORMAT csv, HEADER true, DELIMITER ',');",
+            $slice,
             $targetPath
         );
 
@@ -81,7 +85,6 @@ class DuckDbExporter
         $this->ensureSnapshotExists($snapshotId);
         $this->prepareDirectoryForFile($targetPath);
 
-        $snapshotPath = $this->snapshotManager->getSnapshotPath($snapshotId);
         $meta = $this->snapshotManager->getMetadata($snapshotId);
         $totalRows = (int) ($meta['total_rows'] ?? 0);
 
@@ -92,47 +95,18 @@ class DuckDbExporter
         $partFiles = [];
 
         try {
-            if ($splitRows > 0 && $totalRows > $splitRows) {
-                $numParts = (int) ceil($totalRows / $splitRows);
+            $numParts = ($splitRows > 0 && $totalRows > $splitRows) ? (int) ceil($totalRows / $splitRows) : 1;
+            $limit = $numParts > 1 ? $splitRows : null;
 
-                for ($i = 0; $i < $numParts; $i++) {
-                    $partNum = $i + 1;
-                    $offset = $i * $splitRows;
-                    $partPath = $tempDir.DIRECTORY_SEPARATOR."{$baseName}_part{$partNum}.{$format}";
-
-                    if ($format === 'xlsx') {
-                        $sql = sprintf(
-                            "LOAD excel;\nCOPY (SELECT * EXCLUDE (__row_id) FROM report_result ORDER BY __row_id LIMIT %d OFFSET %d) TO '%s' WITH (FORMAT xlsx, HEADER true, SHEET 'SmartReport');",
-                            $splitRows,
-                            $offset,
-                            $partPath
-                        );
-                        $this->adapter->runQuery($sql, $snapshotPath, false, 60);
-                    } else {
-                        $sql = sprintf(
-                            "COPY (SELECT * EXCLUDE (__row_id) FROM report_result ORDER BY __row_id LIMIT %d OFFSET %d) TO '%s' WITH (FORMAT csv, HEADER true, DELIMITER ',');",
-                            $splitRows,
-                            $offset,
-                            $partPath
-                        );
-                        $this->adapter->runQuery($sql, $snapshotPath, false, 60);
-
-                        $content = (string) file_get_contents($partPath);
-                        if (! str_starts_with($content, "\xEF\xBB\xBF")) {
-                            file_put_contents($partPath, "\xEF\xBB\xBF".$content);
-                        }
-                    }
-
-                    $partFiles[] = $partPath;
-                }
-            } else {
-                // Single part
-                $partPath = $tempDir.DIRECTORY_SEPARATOR."{$baseName}_part1.{$format}";
+            for ($i = 0; $i < $numParts; $i++) {
+                $partNum = $i + 1;
+                $offset = $i * $splitRows;
+                $partPath = $tempDir.DIRECTORY_SEPARATOR."{$baseName}_part{$partNum}.{$format}";
 
                 if ($format === 'xlsx') {
-                    $this->exportExcel($snapshotId, $partPath);
+                    $this->exportExcel($snapshotId, $partPath, $limit, $offset);
                 } else {
-                    $this->exportCsv($snapshotId, $partPath);
+                    $this->exportCsv($snapshotId, $partPath, $limit, $offset);
                 }
 
                 $partFiles[] = $partPath;

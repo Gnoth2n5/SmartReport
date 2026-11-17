@@ -326,49 +326,10 @@ class CustomViewResource extends Resource
      */
     public static function resolveFormData(Action $action, ?Livewire $livewire = null, ?Model $record = null): array
     {
-        $data = [];
-
-        if ($record instanceof CustomView) {
-            $data = $record->toArray();
-        }
-
-        if ($livewire && method_exists($livewire, 'getForm') && $livewire->getForm('form')) {
-            try {
-                $raw = (array) $livewire->getForm('form')->getRawState();
-                $data = array_merge($data, array_filter($raw, fn ($v) => $v !== null));
-            } catch (\Throwable) {
-                // Ignore fallback
-            }
-        } elseif ($livewire && isset($livewire->form)) {
-            try {
-                $raw = (array) $livewire->form->getRawState();
-                $data = array_merge($data, array_filter($raw, fn ($v) => $v !== null));
-            } catch (\Throwable) {
-                // Ignore fallback
-            }
-        }
+        $data = $record instanceof CustomView ? $record->toArray() : [];
 
         if ($livewire && isset($livewire->data) && is_array($livewire->data)) {
             $data = array_merge($data, array_filter($livewire->data, fn ($v) => $v !== null));
-        }
-
-        if ($action->getSchemaComponent() !== null) {
-            try {
-                $get = $action->getSchemaComponent()->makeGetUtility();
-                $data = array_merge($data, array_filter([
-                    'view_code' => $get('view_code'),
-                    'view_name' => $get('view_name'),
-                    'execution_mode' => $get('execution_mode'),
-                    'allowed_sources' => $get('allowed_sources'),
-                    'default_sources' => $get('default_sources'),
-                    'source_queries' => $get('source_queries'),
-                    'sql_text' => $get('sql_text'),
-                    'filters' => $get('filters'),
-                    'roles' => $get('roles'),
-                ], fn ($v) => $v !== null));
-            } catch (\Throwable) {
-                // Ignore fallback
-            }
         }
 
         return $data;
@@ -394,7 +355,7 @@ class CustomViewResource extends Resource
      */
     public static function executeAutoDetectParameters(?Livewire $livewire, Action $action, ?Model $record = null, ?SqlParameterExtractor $extractor = null): void
     {
-        $extractor = $extractor ?? app(SqlParameterExtractor::class);
+        $extractor ??= app(SqlParameterExtractor::class);
         $data = static::resolveFormData($action, $livewire, $record);
 
         $sqlText = (string) ($data['sql_text'] ?? '');
@@ -402,14 +363,10 @@ class CustomViewResource extends Resource
         $sourceQueries = (array) ($data['source_queries'] ?? []);
         $existingFilters = (array) ($data['filters'] ?? []);
 
-        $sqls = [];
-        if (trim($sqlText) !== '') {
-            $sqls[] = $sqlText;
-        }
-
-        if ($executionMode === CustomView::MODE_FEDERATED_JOIN && is_array($sourceQueries)) {
+        $sqls = trim($sqlText) !== '' ? [$sqlText] : [];
+        if ($executionMode === CustomView::MODE_FEDERATED_JOIN) {
             foreach ($sourceQueries as $sq) {
-                $q = $sq['sql_text'] ?? $sq['query'] ?? '';
+                $q = (string) ($sq['sql_text'] ?? $sq['query'] ?? '');
                 if (trim($q) !== '') {
                     $sqls[] = $q;
                 }
@@ -417,11 +374,7 @@ class CustomViewResource extends Resource
         }
 
         if (empty($sqls)) {
-            Notification::make()
-                ->title('Chưa có câu lệnh SQL')
-                ->body('Vui lòng nhập câu lệnh SQL trước khi nhận diện tham số.')
-                ->warning()
-                ->send();
+            Notification::make()->title('Chưa có câu lệnh SQL')->body('Vui lòng nhập câu lệnh SQL trước khi nhận diện tham số.')->warning()->send();
 
             return;
         }
@@ -436,16 +389,11 @@ class CustomViewResource extends Resource
         }
 
         if (empty($allTokens)) {
-            Notification::make()
-                ->title('Không tìm thấy tham số')
-                ->body('Không phát hiện tham số @tham_so nào trong câu lệnh SQL.')
-                ->info()
-                ->send();
+            Notification::make()->title('Không tìm thấy tham số')->body('Không phát hiện tham số @tham_so nào trong câu lệnh SQL.')->info()->send();
 
             return;
         }
 
-        // Index existing filters by lowercased parameter name to preserve user customizations
         $existingMap = [];
         foreach ($existingFilters as $f) {
             if (is_array($f)) {
@@ -463,59 +411,18 @@ class CustomViewResource extends Resource
 
             if (isset($existingMap[$key])) {
                 $existing = $existingMap[$key];
-                $paramName = $existing['name'] ?? $existing['param_name'] ?? $cleanToken;
-                $inputType = $existing['type'] ?? $existing['input_type'] ?? 'text';
-
-                $existing['name'] = $paramName;
-                $existing['param_name'] = $paramName;
-                $existing['type'] = $inputType;
-                $existing['input_type'] = $inputType;
+                $existing['name'] = $existing['name'] ?? $existing['param_name'] ?? $cleanToken;
+                $existing['type'] = $existing['type'] ?? $existing['input_type'] ?? 'text';
                 $existing['label'] = $existing['label'] ?? $cleanToken;
                 $existing['is_required'] = (bool) ($existing['is_required'] ?? false);
                 $newFilters[] = $existing;
             } else {
-                $def = $extractor->inferParameterDefinition($cleanToken);
-                $newFilters[] = [
-                    'name' => $def['name'],
-                    'param_name' => $def['name'],
-                    'label' => $def['label'],
-                    'type' => $def['type'],
-                    'input_type' => $def['type'],
-                    'default_value' => $def['default_value'],
-                    'options' => $def['options'],
-                    'is_required' => (bool) ($def['is_required'] ?? false),
-                ];
+                $newFilters[] = $extractor->inferParameterDefinition($cleanToken);
             }
         }
 
-        // Update form state
-        if ($livewire) {
-            if (isset($livewire->data) && is_array($livewire->data)) {
-                $livewire->data['filters'] = $newFilters;
-            }
-            if (method_exists($livewire, 'getForm') && $livewire->getForm('form')) {
-                $livewire->getForm('form')->fill([
-                    ...($data ?? []),
-                    'filters' => $newFilters,
-                ]);
-            } elseif (isset($livewire->form)) {
-                $livewire->form->fill([
-                    ...($data ?? []),
-                    'filters' => $newFilters,
-                ]);
-            }
-            if (isset($livewire->data) && is_array($livewire->data)) {
-                $livewire->data['filters'] = $newFilters;
-            }
-        }
-
-        if ($action->getSchemaComponent() !== null) {
-            try {
-                $set = $action->getSchemaComponent()->makeSetUtility();
-                $set('filters', $newFilters);
-            } catch (\Throwable) {
-                // Ignore fallback
-            }
+        if ($livewire && isset($livewire->data) && is_array($livewire->data)) {
+            $livewire->data['filters'] = $newFilters;
         }
 
         Notification::make()
@@ -538,208 +445,75 @@ class CustomViewResource extends Resource
             ->modalWidth('7xl')
             ->modalSubmitAction(false)
             ->modalCancelActionLabel('Đóng')
-            ->modalContent(function (Action $action, ?Livewire $livewire = null, ?Model $record = null, ?DuckDbReportEngine $reportEngine = null, ?SqlSafetyValidator $validator = null): View {
-                $reportEngine = $reportEngine ?? app(DuckDbReportEngine::class);
-                $validator = $validator ?? app(SqlSafetyValidator::class);
-
-                $data = static::resolveFormData($action, $livewire, $record);
-                $sqlText = (string) ($data['sql_text'] ?? '');
-                $executionMode = (string) ($data['execution_mode'] ?? CustomView::MODE_SINGLE_OR_UNION);
-                $allowedSources = (array) ($data['allowed_sources'] ?? []);
-                $defaultSources = (array) ($data['default_sources'] ?? []);
-                $sourceQueries = (array) ($data['source_queries'] ?? []);
-                $filters = (array) ($data['filters'] ?? []);
-
-                if (trim($sqlText) === '') {
-                    return view('filament.components.sql-preview-modal', [
-                        'error' => 'Vui lòng nhập câu lệnh SQL trước khi chạy thử.',
-                        'rows' => [],
-                        'columns' => [],
-                        'totalRows' => 0,
-                        'latencyMs' => 0,
-                        'appliedParams' => [],
-                    ]);
+            ->modalContent(fn (Action $action, ?Livewire $livewire = null, ?Model $record = null): View => view(
+                'filament.components.sql-preview-modal',
+                static::runPreviewData($action, $livewire, $record)
+            ))
+            ->action(function (Action $action, ?Livewire $livewire = null, ?Model $record = null): void {
+                $res = static::runPreviewData($action, $livewire, $record);
+                if ($res['error'] !== null) {
+                    Notification::make()->title('Lỗi chạy thử SQL')->body($res['error'])->danger()->persistent()->send();
+                } else {
+                    Notification::make()
+                        ->title('Chạy thử thành công')
+                        ->body("Tổng số dòng: {$res['totalRows']} | Thời gian: {$res['latencyMs']} ms | Cột: ".implode(', ', array_slice($res['columns'], 0, 5)))
+                        ->success()
+                        ->send();
                 }
-
-                $violations = [];
-                if (! $validator->isSafe($sqlText, $violations)) {
-                    return view('filament.components.sql-preview-modal', [
-                        'error' => implode(' ', $violations),
-                        'rows' => [],
-                        'columns' => [],
-                        'totalRows' => 0,
-                        'latencyMs' => 0,
-                        'appliedParams' => [],
-                    ]);
-                }
-
-                if ($executionMode === CustomView::MODE_FEDERATED_JOIN && is_array($sourceQueries)) {
-                    foreach ($sourceQueries as $sq) {
-                        $sqSql = $sq['sql_text'] ?? $sq['query'] ?? '';
-                        $sqViolations = [];
-                        if (! empty($sqSql) && ! $validator->isSafe($sqSql, $sqViolations)) {
-                            return view('filament.components.sql-preview-modal', [
-                                'error' => implode(' ', $sqViolations),
-                                'rows' => [],
-                                'columns' => [],
-                                'totalRows' => 0,
-                                'latencyMs' => 0,
-                                'appliedParams' => [],
-                            ]);
-                        }
-                    }
-                }
-
-                try {
-                    $normSourceQueries = [];
-                    foreach ($sourceQueries as $sq) {
-                        $alias = $sq['alias'] ?? $sq['table_alias'] ?? '';
-                        $sql = $sq['sql_text'] ?? $sq['query'] ?? '';
-                        $normSourceQueries[] = [
-                            'source_code' => $sq['source_code'] ?? '',
-                            'alias' => $alias,
-                            'table_alias' => $alias,
-                            'sql_text' => $sql,
-                            'query' => $sql,
-                        ];
-                    }
-
-                    $tempView = new CustomView([
-                        'view_code' => $data['view_code'] ?? 'temp_preview',
-                        'view_name' => $data['view_name'] ?? 'Preview',
-                        'execution_mode' => $executionMode,
-                        'allowed_sources' => $allowedSources,
-                        'default_sources' => $defaultSources,
-                        'source_queries' => $normSourceQueries,
-                        'sql_text' => $sqlText,
-                        'filters' => $filters,
-                    ]);
-
-                    $selectedSources = ! empty($defaultSources) ? $defaultSources : $allowedSources;
-                    if (empty($selectedSources) && $executionMode === CustomView::MODE_SINGLE_OR_UNION) {
-                        $selectedSources = ['pg_north'];
-                    }
-
-                    $params = [];
-                    foreach ($filters as $f) {
-                        $pName = $f['name'] ?? $f['param_name'] ?? null;
-                        if ($pName) {
-                            $params[$pName] = $f['default_value'] ?? null;
-                        }
-                    }
-
-                    $result = $reportEngine->preview($tempView, $selectedSources, $params, 10);
-
-                    return view('filament.components.sql-preview-modal', [
-                        'error' => null,
-                        'preview' => $result,
-                        'rows' => $result['rows'],
-                        'columns' => $result['columns'],
-                        'totalRows' => $result['totalRows'],
-                        'latencyMs' => $result['latency_ms'],
-                        'appliedParams' => $params,
-                    ]);
-                } catch (\Throwable $e) {
-                    return view('filament.components.sql-preview-modal', [
-                        'error' => $e->getMessage(),
-                        'rows' => [],
-                        'columns' => [],
-                        'totalRows' => 0,
-                        'latencyMs' => 0,
-                        'appliedParams' => [],
-                    ]);
-                }
-            })
-            ->action(function (Action $action, ?Livewire $livewire = null, ?Model $record = null, ?DuckDbReportEngine $reportEngine = null, ?SqlSafetyValidator $validator = null): void {
-                static::executeTestSqlPreview($livewire, $action, $record, $reportEngine, $validator);
             });
     }
 
     /**
-     * Logic for Test SQL Preview Action.
+     * Shared preview execution helper for modal and action trigger.
+     *
+     * @return array{error: ?string, preview?: array<string, mixed>, rows: list<array<string, mixed>>, columns: list<string>, totalRows: int, latencyMs: float|int, appliedParams: array<string, mixed>}
      */
-    public static function executeTestSqlPreview(?Livewire $livewire, Action $action, ?Model $record = null, ?DuckDbReportEngine $reportEngine = null, ?SqlSafetyValidator $validator = null): void
+    protected static function runPreviewData(Action $action, ?Livewire $livewire = null, ?Model $record = null): array
     {
-        $reportEngine = $reportEngine ?? app(DuckDbReportEngine::class);
-        $validator = $validator ?? app(SqlSafetyValidator::class);
-
+        $reportEngine = app(DuckDbReportEngine::class);
+        $validator = app(SqlSafetyValidator::class);
         $data = static::resolveFormData($action, $livewire, $record);
+
         $sqlText = (string) ($data['sql_text'] ?? '');
         $executionMode = (string) ($data['execution_mode'] ?? CustomView::MODE_SINGLE_OR_UNION);
         $allowedSources = (array) ($data['allowed_sources'] ?? []);
         $defaultSources = (array) ($data['default_sources'] ?? []);
         $sourceQueries = (array) ($data['source_queries'] ?? []);
         $filters = (array) ($data['filters'] ?? []);
+        $empty = ['rows' => [], 'columns' => [], 'totalRows' => 0, 'latencyMs' => 0, 'appliedParams' => []];
 
         if (trim($sqlText) === '') {
-            Notification::make()
-                ->title('Chưa có câu lệnh SQL')
-                ->body('Vui lòng nhập câu lệnh SQL trước khi chạy thử.')
-                ->warning()
-                ->send();
-
-            return;
+            return ['error' => 'Vui lòng nhập câu lệnh SQL trước khi chạy thử.', ...$empty];
         }
 
         $violations = [];
         if (! $validator->isSafe($sqlText, $violations)) {
-            Notification::make()
-                ->title('Truy vấn không an toàn')
-                ->body(implode(' ', $violations))
-                ->danger()
-                ->persistent()
-                ->send();
-
-            return;
+            return ['error' => implode(' ', $violations), ...$empty];
         }
 
-        if ($executionMode === CustomView::MODE_FEDERATED_JOIN && is_array($sourceQueries)) {
+        if ($executionMode === CustomView::MODE_FEDERATED_JOIN) {
             foreach ($sourceQueries as $sq) {
-                $sqSql = $sq['sql_text'] ?? $sq['query'] ?? '';
+                $sqSql = (string) ($sq['sql_text'] ?? $sq['query'] ?? '');
                 $sqViolations = [];
-                if (! empty($sqSql) && ! $validator->isSafe($sqSql, $sqViolations)) {
-                    Notification::make()
-                        ->title('Truy vấn nguồn không an toàn')
-                        ->body(implode(' ', $sqViolations))
-                        ->danger()
-                        ->persistent()
-                        ->send();
-
-                    return;
+                if ($sqSql !== '' && ! $validator->isSafe($sqSql, $sqViolations)) {
+                    return ['error' => implode(' ', $sqViolations), ...$empty];
                 }
             }
         }
 
         try {
-            $normSourceQueries = [];
-            foreach ($sourceQueries as $sq) {
-                $alias = $sq['alias'] ?? $sq['table_alias'] ?? '';
-                $sql = $sq['sql_text'] ?? $sq['query'] ?? '';
-                $normSourceQueries[] = [
-                    'source_code' => $sq['source_code'] ?? '',
-                    'alias' => $alias,
-                    'table_alias' => $alias,
-                    'sql_text' => $sql,
-                    'query' => $sql,
-                ];
-            }
-
             $tempView = new CustomView([
                 'view_code' => $data['view_code'] ?? 'temp_preview',
                 'view_name' => $data['view_name'] ?? 'Preview',
                 'execution_mode' => $executionMode,
                 'allowed_sources' => $allowedSources,
                 'default_sources' => $defaultSources,
-                'source_queries' => $normSourceQueries,
+                'source_queries' => $sourceQueries,
                 'sql_text' => $sqlText,
                 'filters' => $filters,
             ]);
 
-            $selectedSources = ! empty($defaultSources) ? $defaultSources : $allowedSources;
-            if (empty($selectedSources) && $executionMode === CustomView::MODE_SINGLE_OR_UNION) {
-                $selectedSources = ['pg_north'];
-            }
-
+            $selectedSources = $defaultSources ?: $allowedSources ?: ($executionMode === CustomView::MODE_SINGLE_OR_UNION ? ['pg_north'] : []);
             $params = [];
             foreach ($filters as $f) {
                 $pName = $f['name'] ?? $f['param_name'] ?? null;
@@ -750,18 +524,17 @@ class CustomViewResource extends Resource
 
             $result = $reportEngine->preview($tempView, $selectedSources, $params, 10);
 
-            Notification::make()
-                ->title('Chạy thử thành công')
-                ->body("Tổng số dòng: {$result['totalRows']} | Thời gian: {$result['latency_ms']} ms | Cột: ".implode(', ', array_slice($result['columns'], 0, 5)))
-                ->success()
-                ->send();
+            return [
+                'error' => null,
+                'preview' => $result,
+                'rows' => $result['rows'],
+                'columns' => $result['columns'],
+                'totalRows' => $result['totalRows'],
+                'latencyMs' => $result['latency_ms'],
+                'appliedParams' => $params,
+            ];
         } catch (\Throwable $e) {
-            Notification::make()
-                ->title('Lỗi chạy thử SQL')
-                ->body($e->getMessage())
-                ->danger()
-                ->persistent()
-                ->send();
+            return ['error' => $e->getMessage(), ...$empty];
         }
     }
 
@@ -772,18 +545,10 @@ class CustomViewResource extends Resource
 
     public static function resolveRecordRouteBinding(int|string $key, ?\Closure $modifyQuery = null): ?Model
     {
-        $query = static::getRecordRouteBindingEloquentQuery();
-
-        if ($modifyQuery) {
-            $query = $modifyQuery($query) ?? $query;
-        }
-
-        return $query->where(function ($q) use ($key): void {
-            $q->where('view_code', $key);
-            if (is_numeric($key)) {
-                $q->orWhere('id', $key);
-            }
-        })->first();
+        return static::getRecordRouteBindingEloquentQuery()
+            ->where('view_code', $key)
+            ->when(is_numeric($key), fn ($q) => $q->orWhere('id', $key))
+            ->first();
     }
 
     public static function getPages(): array
