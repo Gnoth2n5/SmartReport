@@ -339,4 +339,62 @@ SQL;
             ];
         }
     }
+
+    /**
+     * Mask database passwords/secrets in DuckDB ATTACH and CREATE SECRET statements.
+     */
+    public function redactSecrets(string $sql): string
+    {
+        $lines = explode("\n", $sql);
+
+        foreach ($lines as &$line) {
+            // 1. Oracle: CREATE SECRET ... (..., PASSWORD 'secret')
+            $line = (string) preg_replace(
+                '/(?i)(\bPASSWORD\s+\')([^\']*(?:\'\'[^\']*)*)(\')/',
+                '$1***$3',
+                $line
+            );
+
+            // 2. SQL Server: ATTACH 'Server=...;Password=secret;TrustServerCertificate=yes' AS ... (TYPE mssql)
+            if (preg_match('/(?i)\bTYPE\s+mssql\b|\bServer\s*=/', $line) && ! preg_match('/(?i)\bTYPE\s+postgres\b/', $line)) {
+                if (preg_match('/(?i)\bPassword\s*=.*?;\s*TrustServerCertificate\s*=/', $line)) {
+                    $line = (string) preg_replace(
+                        '/(?i)(\bPassword\s*=\s*).*?(?=;\s*TrustServerCertificate\s*=)/',
+                        '$1***',
+                        $line
+                    );
+                } else {
+                    $line = (string) preg_replace(
+                        '/(?i)(\bPassword\s*=\s*).*?(?=\'\s+AS\b|\'$|$)/',
+                        '$1***',
+                        $line
+                    );
+                }
+
+                continue;
+            }
+
+            // 3. PostgreSQL: ATTACH 'host=... user=... password=secret dbname=...' AS ... (TYPE postgres, READ_ONLY)
+            if (preg_match('/(?i)\bTYPE\s+postgres\b|\bhost\s*=/', $line)) {
+                if (preg_match('/(?i)\bpassword\s*=.*\s+dbname\s*=/', $line)) {
+                    $line = (string) preg_replace(
+                        '/(?i)(\bpassword\s*=\s*).*?(?=\s+dbname\s*=)/',
+                        '$1***',
+                        $line
+                    );
+                } else {
+                    $line = (string) preg_replace(
+                        '/(?i)(\bpassword\s*=\s*)(?:[^\s\']|\'\')*(?=\s|\'|$)/',
+                        '$1***',
+                        $line
+                    );
+                }
+
+                continue;
+            }
+        }
+        unset($line);
+
+        return implode("\n", $lines);
+    }
 }

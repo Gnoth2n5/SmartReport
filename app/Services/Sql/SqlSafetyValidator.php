@@ -53,9 +53,22 @@ class SqlSafetyValidator
         'read_ndjson',
         'read_xlsx',
         'parquet_scan',
+        'csv_scan',
+        'json_scan',
+        'xlsx_scan',
+        'sqlite_scan',
+        'iceberg_scan',
+        'delta_scan',
+        'mssql_scan',
         'read_duckdb',
         'glob',
         'duckdb_secrets',
+        'sniff_csv',
+        'getenv',
+        'current_setting',
+        'postgres_query',
+        'postgres_execute',
+        'oracle_query',
     ];
 
     /**
@@ -178,6 +191,20 @@ class SqlSafetyValidator
             return false;
         }
 
+        // 8. Block DuckDB catalog/secret/pragma/sniff functions (duckdb_*, pragma_*, sniff_*)
+        if (preg_match('/\b(?:duckdb|pragma|sniff)_[a-zA-Z0-9_]+\b/i', $withoutLiterals, $m)) {
+            $violations[] = "Forbidden SQL function detected: [{$m[0]}].";
+
+            return false;
+        }
+
+        // 9. Block any *_scan table functions (csv_scan, json_scan, xlsx_scan, sqlite_scan, iceberg_scan, delta_scan, mssql_scan, etc.)
+        if (preg_match('/\b[a-zA-Z0-9_]+_scan\b/i', $withoutLiterals, $m)) {
+            $violations[] = "Forbidden SQL function detected: [{$m[0]}].";
+
+            return false;
+        }
+
         return true;
     }
 
@@ -190,8 +217,49 @@ class SqlSafetyValidator
             return false;
         }
 
-        // Split by semicolon
-        $parts = explode(';', $sqlWithoutLiterals);
+        // Split by semicolon only outside quoted literals/identifiers
+        $len = strlen($sqlWithoutLiterals);
+        $parts = [];
+        $buf = '';
+        $i = 0;
+
+        while ($i < $len) {
+            $c = $sqlWithoutLiterals[$i];
+
+            if ($c === "'" || $c === '"') {
+                $quote = $c;
+                $start = $i;
+                $i++;
+                while ($i < $len) {
+                    if ($sqlWithoutLiterals[$i] === $quote) {
+                        if ($i + 1 < $len && $sqlWithoutLiterals[$i + 1] === $quote) {
+                            $i += 2;
+
+                            continue;
+                        }
+                        $i++;
+                        break;
+                    }
+                    $i++;
+                }
+                $buf .= substr($sqlWithoutLiterals, $start, $i - $start);
+
+                continue;
+            }
+
+            if ($c === ';') {
+                $parts[] = $buf;
+                $buf = '';
+                $i++;
+
+                continue;
+            }
+
+            $buf .= $c;
+            $i++;
+        }
+        $parts[] = $buf;
+
         $nonEmpty = [];
         foreach ($parts as $part) {
             if (trim($part) !== '') {
@@ -248,14 +316,14 @@ class SqlSafetyValidator
         while ($i < $len) {
             $c = $sql[$i];
 
-            // 1. Single-quoted string literal
+            // 1. Single-quoted string literal (ANSI SQL / DuckDB: only '' escapes ', never \')
             if ($c === "'") {
                 $start = $i;
                 $i++;
                 $closed = false;
                 while ($i < $len) {
                     if ($sql[$i] === "'") {
-                        // Escaped single quote '' in standard SQL
+                        // Escaped single quote '' in standard SQL / DuckDB
                         if ($i + 1 < $len && $sql[$i + 1] === "'") {
                             $i += 2;
 
@@ -264,11 +332,6 @@ class SqlSafetyValidator
                         $i++;
                         $closed = true;
                         break;
-                    } elseif ($sql[$i] === '\\' && $i + 1 < $len) {
-                        // Backslash escape \'
-                        $i += 2;
-
-                        continue;
                     }
                     $i++;
                 }
@@ -286,7 +349,61 @@ class SqlSafetyValidator
                 continue;
             }
 
-            // 2. Single-line comment (-- ...)
+            // 2. Double-quoted SQL identifier ("..." with "" escaping)
+            if ($c === '"') {
+                $start = $i;
+                $i++;
+                $closed = false;
+                while ($i < $len) {
+                    if ($sql[$i] === '"') {
+                        // Escaped double quote "" in standard SQL / DuckDB
+                        if ($i + 1 < $len && $sql[$i + 1] === '"') {
+                            $i += 2;
+
+                            continue;
+                        }
+                        $i++;
+                        $closed = true;
+                        break;
+                    }
+                    $i++;
+                }
+
+                if (! $closed) {
+                    $hasUnclosedLiteral = true;
+                }
+
+                // Preserve double-quoted identifiers verbatim so quoted function names (e.g. "getenv"('PATH'))
+                // remain visible to keyword/function validation while preventing quote/comment desync.
+                $out .= substr($sql, $start, $i - $start);
+
+                continue;
+            }
+
+            // 3. Dollar-quoted string literal ($$...$$ or $tag$...$tag$ supported by DuckDB)
+            if ($c === '$' && preg_match('/\G\$(?:[a-zA-Z_][a-zA-Z0-9_]*)?\$/', $sql, $tagMatch, 0, $i)) {
+                $tag = $tagMatch[0];
+                $tagLen = strlen($tag);
+                $start = $i;
+                $endPos = strpos($sql, $tag, $i + $tagLen);
+
+                if ($endPos === false) {
+                    $hasUnclosedLiteral = true;
+                    $i = $len;
+                } else {
+                    $i = $endPos + $tagLen;
+                }
+
+                if ($stripLiterals) {
+                    $out .= "''";
+                } else {
+                    $out .= substr($sql, $start, $i - $start);
+                }
+
+                continue;
+            }
+
+            // 4. Single-line comment (-- ...)
             if ($c === '-' && $i + 1 < $len && $sql[$i + 1] === '-') {
                 $start = $i;
                 $i += 2;

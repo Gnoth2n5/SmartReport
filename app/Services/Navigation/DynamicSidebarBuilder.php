@@ -44,8 +44,8 @@ class DynamicSidebarBuilder
         $reportGroups = $this->buildReportGroups($user);
         $builder->groups($reportGroups);
 
-        // 4. Add System Management Group for Super Admins
-        if ($user->isSuperAdmin()) {
+        // 4. Add System Management Group for Admins and Super Admins
+        if ($user->hasAnyRole(['admin', 'super_admin'])) {
             $adminGroup = $this->buildAdminGroup();
             if ($adminGroup) {
                 $builder->group($adminGroup);
@@ -107,7 +107,7 @@ class DynamicSidebarBuilder
     }
 
     /**
-     * Build system administration group dynamically from panel resources.
+     * Build system administration group dynamically from panel resources and pages.
      */
     public function buildAdminGroup(): ?NavigationGroup
     {
@@ -120,9 +120,24 @@ class DynamicSidebarBuilder
             }
         }
 
+        foreach ($panel->getPages() as $page) {
+            if ($page === Dashboard::class || ! $page::shouldRegisterNavigation()) {
+                continue;
+            }
+
+            if ($page::canAccess()) {
+                $adminItems = array_merge($adminItems, $page::getNavigationItems());
+            }
+        }
+
         if (empty($adminItems)) {
             return null;
         }
+
+        usort(
+            $adminItems,
+            fn (NavigationItem $a, NavigationItem $b): int => ($a->getSort() ?? 0) <=> ($b->getSort() ?? 0)
+        );
 
         return NavigationGroup::make('Quản Trị Hệ Thống')
             ->collapsible()
