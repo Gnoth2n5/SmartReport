@@ -26,6 +26,10 @@
 /storage/app/snapshots/*.duckdb
 /storage/app/exports/*
 /.playwright-cli
+/playwright-report
+/test-results
+/blob-report
+/playwright/.cache
 /storage/pail
 /vendor
 _ide_helper.php

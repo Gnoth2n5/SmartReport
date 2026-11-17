@@ -262,7 +262,7 @@ class DuckDbSourceAdapter
             $command[] = '-json';
         }
 
-        $process = new Process($command);
+        $process = new Process($command, null, ['HOME' => $this->resolveHomeDirectory()]);
         $process->setInput($sql);
         $process->setTimeout($timeout);
         $process->run();
@@ -396,5 +396,25 @@ SQL;
         unset($line);
 
         return implode("\n", $lines);
+    }
+
+    /**
+     * Resolve a valid HOME directory for DuckDB extension loading under restricted web server environments.
+     */
+    protected function resolveHomeDirectory(): string
+    {
+        $envHome = getenv('HOME');
+        if (is_string($envHome) && $envHome !== '') {
+            return $envHome;
+        }
+
+        if (function_exists('posix_geteuid') && function_exists('posix_getpwuid')) {
+            $pw = posix_getpwuid(posix_geteuid());
+            if (is_array($pw) && ! empty($pw['dir'])) {
+                return (string) $pw['dir'];
+            }
+        }
+
+        return sys_get_temp_dir();
     }
 }

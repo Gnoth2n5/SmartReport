@@ -416,7 +416,15 @@ SQL;
     {
         $command = [$this->duckdbBinary, '-batch', '-light-mode'];
 
-        $process = new Process($command);
+        $home = getenv('HOME');
+        if (! is_string($home) || $home === '') {
+            $pw = function_exists('posix_geteuid') && function_exists('posix_getpwuid')
+                ? posix_getpwuid(posix_geteuid())
+                : null;
+            $home = is_array($pw) && ! empty($pw['dir']) ? (string) $pw['dir'] : sys_get_temp_dir();
+        }
+
+        $process = new Process($command, null, ['HOME' => $home]);
         $process->setInput($sql);
         $process->setTimeout(60);
         $process->run();
