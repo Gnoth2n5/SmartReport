@@ -7,7 +7,7 @@ import { expect, type Locator, type Page, test } from '@playwright/test';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
-const SCREENSHOTS_DIR = path.join(PROJECT_ROOT, 'docs', 'screenshots');
+const SCREENSHOTS_DIR = path.join(PROJECT_ROOT, '.agents', 'docs', 'screenshots');
 const DUCKDB_BIN = path.join(PROJECT_ROOT, 'storage', 'bin', 'duckdb');
 
 async function loginAsAdmin(page: Page): Promise<void> {

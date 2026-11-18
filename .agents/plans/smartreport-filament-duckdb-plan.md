@@ -247,7 +247,7 @@ Kiểm thử toàn diện ứng dụng đang chạy thật trên trình duyệt 
    - **Cách 4 (3-Way Federation `Oracle + SQL Server + PostgreSQL`)**: Mở `federated-3way-executive-report`, kiểm tra kết quả tổng hợp xuyên 3 hệ DB và kiểm tra 2 tab `Application information` & `SQL Query`.
 4. **E2E 4 — Kiểm Tra Tải File Xuất Chuẩn `.xlsx` và `.csv` (+ Chia nhỏ `.zip`)**:
    - Bấm **Xuất Excel (`.xlsx`)** và **Xuất CSV (`.csv`)**, xác nhận file `.xlsx` tải về đọc lại được bằng DuckDB `read_xlsx` và file `.csv` / `.zip` đúng dữ liệu.
-5. **Chụp ảnh màn hình nghiệm thu** bằng `playwright-cli` / Chrome MCP lưu vào `docs/screenshots/`.
+5. **Chụp ảnh màn hình nghiệm thu** bằng `playwright-cli` / Chrome MCP lưu vào `.agents/docs/screenshots/`.
 
 #### Kiểm tra nghiệm thu (Acceptance Checks) & Commit Gate Cụm 6
 ```bash
