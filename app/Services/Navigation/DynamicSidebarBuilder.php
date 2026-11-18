@@ -71,10 +71,6 @@ class DynamicSidebarBuilder
             ->where('is_active', true)
             ->get();
 
-        $allSitTemplates = Schema::hasTable('sit_templates')
-            ? SitTemplate::query()->where('is_active', true)->get()
-            : collect();
-
         $userPermissions = RolePermission::query()
             ->whereIn('role_code', $user->roles ?? [])
             ->get();
@@ -87,7 +83,6 @@ class DynamicSidebarBuilder
             }
 
             $groupViews = $allViews->where('menu_group_code', $group->group_code);
-            $groupSitTemplates = $allSitTemplates->where('menu_group_code', $group->group_code);
             $items = [];
 
             foreach ($groupViews as $view) {
@@ -98,17 +93,6 @@ class DynamicSidebarBuilder
                 $items[] = NavigationItem::make($view->view_name)
                     ->url(url("/admin/reports/{$view->view_code}"))
                     ->isActiveWhen(fn (): bool => request()->is("admin/reports/{$view->view_code}*"));
-            }
-
-            foreach ($groupSitTemplates as $sitTemplate) {
-                if (! $this->canUserAccessSitTemplate($user, $sitTemplate, $userPermissions)) {
-                    continue;
-                }
-
-                $items[] = NavigationItem::make($sitTemplate->template_name)
-                    ->icon('heroicon-o-clipboard-document-check')
-                    ->url(url("/admin/sit-tests/{$sitTemplate->template_code}"))
-                    ->isActiveWhen(fn (): bool => request()->is("admin/sit-tests/{$sitTemplate->template_code}*"));
             }
 
             if (! empty($items)) {

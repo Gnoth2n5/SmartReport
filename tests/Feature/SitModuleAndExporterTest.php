@@ -49,18 +49,14 @@ class SitModuleAndExporterTest extends TestCase
         parent::tearDown();
     }
 
-    public function test_sit_template_resource_creates_custom_template_and_appears_on_sidebar(): void
+    public function test_sit_template_resource_creates_custom_template_and_renders_minimalist_cards_without_cluttering_sidebar(): void
     {
         $this->actingAs($this->adminUser);
-
-        Livewire::test(ListSitTemplates::class)
-            ->assertCanSeeTableRecords(SitTemplate::all());
 
         Livewire::test(CreateSitTemplate::class)
             ->fillForm([
                 'template_code' => 'sit-custom-warehouse',
                 'template_name' => 'SIT Kiểm Thử Nhập Xuất Kho',
-                'menu_group_code' => 'logistics',
                 'module_name' => 'WMS Kho Vận',
                 'version' => '1.1.0',
                 'is_active' => true,
@@ -84,14 +80,22 @@ class SitModuleAndExporterTest extends TestCase
 
         $this->assertDatabaseHas('sit_templates', [
             'template_code' => 'sit-custom-warehouse',
-            'menu_group_code' => 'logistics',
         ]);
 
-        // Verify sidebar contains the new SIT Template for super_admin
+        // Verify individual SIT templates are NOT pushed onto the Sidebar
         $this->get('/admin')
             ->assertSuccessful()
+            ->assertDontSee('/admin/sit-tests/sit-custom-warehouse');
+
+        // Verify /admin/sit-templates renders minimalist cards (not a table) and supports cardSearch
+        Livewire::test(ListSitTemplates::class)
+            ->assertSee('sit-cards-grid', false)
             ->assertSee('SIT Kiểm Thử Nhập Xuất Kho')
-            ->assertSee('/admin/sit-tests/sit-custom-warehouse');
+            ->assertSee('/admin/sit-tests/sit-custom-warehouse', false)
+            ->set('cardSearch', 'WMS Kho Vận')
+            ->assertSee('SIT Kiểm Thử Nhập Xuất Kho')
+            ->set('cardSearch', 'khong-ton-tai-xyz')
+            ->assertDontSee('SIT Kiểm Thử Nhập Xuất Kho');
 
         // Verify viewer cannot access super_admin-only SIT template
         $this->flushSession();

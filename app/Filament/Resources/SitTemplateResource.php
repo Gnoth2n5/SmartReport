@@ -58,9 +58,9 @@ class SitTemplateResource extends Resource
             ->columns(1)
             ->components([
                 Section::make('Thông tin Kịch bản SIT')
-                    ->description('Cấu hình mã kịch bản, nhóm menu hiển thị trên Sidebar và phân hệ kiểm thử')
+                    ->description('Cấu hình mã kịch bản, tên kịch bản và phân hệ kiểm thử')
                     ->schema([
-                        Grid::make(['default' => 1, 'md' => 3])
+                        Grid::make(['default' => 1, 'md' => 2])
                             ->schema([
                                 TextInput::make('template_code')
                                     ->label('Mã kịch bản (Template Code)')
@@ -74,13 +74,6 @@ class SitTemplateResource extends Resource
                                     ->required()
                                     ->maxLength(255)
                                     ->placeholder('vd: Kiểm thử SIT Đồng bộ Đơn hàng & Sản xuất'),
-                                Select::make('menu_group_code')
-                                    ->label('Nhóm Menu Sidebar')
-                                    ->options(fn (): array => MenuGroup::where('is_active', true)->pluck('title', 'group_code')->toArray())
-                                    ->searchable()
-                                    ->preload()
-                                    ->nullable()
-                                    ->placeholder('Chọn nhóm hiển thị trên Sidebar'),
                             ]),
                         Grid::make(['default' => 1, 'md' => 3])
                             ->schema([
