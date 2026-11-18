@@ -54,4 +54,14 @@ class MenuGroup extends Model
     {
         return $this->hasMany(CustomView::class, 'menu_group_code', 'group_code');
     }
+
+    /**
+     * Get the SIT templates associated with this menu group.
+     *
+     * @return HasMany<SitTemplate, $this>
+     */
+    public function sitTemplates(): HasMany
+    {
+        return $this->hasMany(SitTemplate::class, 'menu_group_code', 'group_code');
+    }
 }

@@ -6,10 +6,13 @@ use App\Models\CustomView;
 use App\Models\DataSource;
 use App\Models\MenuGroup;
 use App\Models\RolePermission;
+use App\Models\SitTemplate;
+use App\Models\SitTestRun;
 use App\Models\User;
 use App\Services\Database\ExternalTestDatabaseProvisioner;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
 
 class SmartReportSeeder extends Seeder
 {
@@ -59,6 +62,7 @@ class SmartReportSeeder extends Seeder
         $this->seedMenuGroups();
         $this->seedRolePermissions();
         $this->seedCustomViews();
+        $this->seedSitTemplates();
         $this->seedUsers();
     }
 
@@ -410,6 +414,95 @@ class SmartReportSeeder extends Seeder
         foreach ($customViews as $view) {
             CustomView::updateOrCreate(['view_code' => $view['view_code']], $view);
         }
+    }
+
+    public function seedSitTemplates(): void
+    {
+        $template = SitTemplate::updateOrCreate(
+            ['template_code' => 'sit-erp-order-sync'],
+            [
+                'template_name' => 'Kiểm Thử SIT Đồng Bộ Đơn Hàng & Lệnh Sản Xuất ERP',
+                'menu_group_code' => 'manufacturing',
+                'module_name' => 'ERP Sản Xuất & Kho Vận',
+                'description' => 'Kịch bản kiểm thử tích hợp luồng tạo hợp đồng xuất khẩu sang tạo lệnh sản xuất tại phân xưởng.',
+                'version' => '1.0.0',
+                'step_fields' => SitTemplate::defaultStepFields(),
+                'default_steps' => [
+                    [
+                        'uid' => 'step_default_1',
+                        'step_no' => 1,
+                        'title' => 'Tạo hợp đồng xuất khẩu mới tại chi nhánh Miền Bắc',
+                        'action' => 'Đăng nhập phân hệ Hợp đồng -> Nhập thông tin khách hàng và lưu hợp đồng.',
+                        'test_data' => 'ContractNo = HD-N-026, Plant = NORTH, Amount = 125000 USD',
+                        'expected' => 'Hợp đồng lưu thành công ở trạng thái IN_PROGRESS.',
+                    ],
+                    [
+                        'uid' => 'step_default_2',
+                        'step_no' => 2,
+                        'title' => 'Đồng bộ lệnh sản xuất sang hệ thống SQL Server ERP',
+                        'action' => 'Chạy job đồng bộ ERP và kiểm tra lệnh sản xuất được sinh tự động.',
+                        'test_data' => 'OrderNo = PO-2026-001, Machine = MC-01, Output = 1500',
+                        'expected' => 'Bản ghi xuất hiện trong bảng dbo.production_orders khớp mã hợp đồng.',
+                    ],
+                ],
+                'roles' => ['super_admin', 'report_viewer'],
+                'is_active' => true,
+            ]
+        );
+
+        // Seed a sample 16x16 PNG image for SIT evidence demo
+        $samplePng = base64_decode(
+            'iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAACXBIWXMAAAsTAAALEwEAmpwYAAAAB3RJTUUH6AsTEg0x4r7I2QAAAB1pVFh0Q29tbWVudAAAAAAAQ3JlYXRlZCB3aXRoIEdJTVBkLmUHAAAAHklEQVQoz2NgYGD4z8DAwMgwquFUA8OoBgYGBgYACokBAd67X3gAAAAASUVORK5CYII='
+        );
+        $sampleRelPath = 'sit-evidence/sample/step1_sample.png';
+        Storage::disk('public')->put($sampleRelPath, $samplePng ?: '');
+
+        SitTestRun::updateOrCreate(
+            ['run_code' => 'SIT-ERPSYNC-20261119-01'],
+            [
+                'sit_template_id' => $template->id,
+                'run_title' => 'Đợt SIT Lần 1 - Nghiệm thu Tích hợp ERP',
+                'environment' => 'SIT',
+                'tester_name' => 'Super Administrator',
+                'tested_at' => now(),
+                'status' => SitTestRun::STATUS_PASSED,
+                'summary_notes' => 'Hoàn tất kiểm thử luồng đồng bộ hợp đồng và lệnh sản xuất.',
+                'steps_data' => [
+                    [
+                        'uid' => 'step_run_1',
+                        'step_no' => 1,
+                        'title' => 'Tạo hợp đồng xuất khẩu mới tại chi nhánh Miền Bắc',
+                        'status' => SitTestRun::STEP_PASS,
+                        'fields' => [
+                            'action' => 'Đăng nhập phân hệ Hợp đồng -> Nhập thông tin khách hàng và lưu hợp đồng.',
+                            'test_data' => 'ContractNo = HD-N-026, Plant = NORTH, Amount = 125000 USD',
+                            'expected' => 'Hợp đồng lưu thành công ở trạng thái IN_PROGRESS.',
+                            'actual' => 'Đã tạo thành công hợp đồng HD-N-026.',
+                        ],
+                        'extra_fields' => [
+                            ['label' => 'Mã chứng từ', 'value' => 'HD-N-026'],
+                        ],
+                        'images' => [
+                            ['path' => $sampleRelPath, 'caption' => 'Màn hình xác nhận tạo hợp đồng HD-N-026'],
+                        ],
+                    ],
+                    [
+                        'uid' => 'step_run_2',
+                        'step_no' => 2,
+                        'title' => 'Đồng bộ lệnh sản xuất sang hệ thống SQL Server ERP',
+                        'status' => SitTestRun::STEP_PASS,
+                        'fields' => [
+                            'action' => 'Chạy job đồng bộ ERP và kiểm tra lệnh sản xuất được sinh tự động.',
+                            'test_data' => 'OrderNo = PO-2026-001, Machine = MC-01, Output = 1500',
+                            'expected' => 'Bản ghi xuất hiện trong bảng dbo.production_orders khớp mã hợp đồng.',
+                            'actual' => 'Đã đồng bộ sang SQL Server khớp 100% số lượng.',
+                        ],
+                        'extra_fields' => [],
+                        'images' => [],
+                    ],
+                ],
+            ]
+        );
     }
 
     public function seedUsers(): void
