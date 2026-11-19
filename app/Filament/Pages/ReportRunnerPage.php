@@ -558,6 +558,11 @@ class ReportRunnerPage extends Page
             app(DynamicSidebarBuilder::class)->canUserAccessView($user, $view, $permissions),
             403
         );
+
+        if ($view->isFederatedJoin()) {
+            $requiredSources = array_values(array_unique(array_column($view->source_queries ?? [], 'source_code')));
+            abort_unless(count($this->filterSourcesByRolePermissions($requiredSources)) === count($requiredSources), 403);
+        }
     }
 
     protected function initializeDefaults(CustomView $view): void

@@ -3,6 +3,7 @@
 namespace App\Services\Sql;
 
 use App\Exceptions\SqlSafetyException;
+use Closure;
 
 class SqlSafetyValidator
 {
@@ -134,6 +135,11 @@ class SqlSafetyValidator
 
         // 2. Reject multiple statements (semicolons followed by non-whitespace statements)
         $withoutLiterals = $this->stripStringLiterals($withoutComments);
+        if (preg_match("/\b(?:FROM|JOIN)\s*(?:\(\s*)*''/i", $withoutLiterals)) {
+            $violations[] = 'File paths cannot be used as SQL table sources.';
+
+            return false;
+        }
         if ($this->hasMultipleStatements($withoutLiterals)) {
             $violations[] = 'Multiple SQL statements separated by semicolons are strictly prohibited.';
 
@@ -295,16 +301,24 @@ class SqlSafetyValidator
         bool $stripComments = true,
         bool $stripLiterals = false,
         bool &$hasUnclosedLiteral = false,
-        bool &$hasUnclosedComment = false
+        bool &$hasUnclosedComment = false,
+        ?Closure $transformCode = null
     ): string {
         $len = strlen($sql);
         $out = '';
+        $code = '';
         $i = 0;
         $hasUnclosedLiteral = false;
         $hasUnclosedComment = false;
 
         while ($i < $len) {
             $c = $sql[$i];
+
+            if ($c === "'" || $c === '"' || substr($sql, $i, 2) === '--' || substr($sql, $i, 2) === '/*'
+                || ($c === '$' && preg_match('/\G\$(?:[a-zA-Z_][a-zA-Z0-9_]*)?\$/', $sql, $tagMatch, 0, $i))) {
+                $out .= $transformCode !== null ? $transformCode($code) : $code;
+                $code = '';
+            }
 
             // 1. Single-quoted string literal (ANSI SQL / DuckDB: only '' escapes ', never \')
             if ($c === "'") {
@@ -436,10 +450,10 @@ class SqlSafetyValidator
             }
 
             // 4. Regular characters
-            $out .= $c;
+            $code .= $c;
             $i++;
         }
 
-        return $out;
+        return $out.($transformCode !== null ? $transformCode($code) : $code);
     }
 }

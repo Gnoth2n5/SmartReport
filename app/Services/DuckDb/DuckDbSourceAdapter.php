@@ -3,22 +3,16 @@
 namespace App\Services\DuckDb;
 
 use App\Models\DataSource;
+use App\Services\Sql\SqlSafetyValidator;
 use InvalidArgumentException;
 use RuntimeException;
 use Symfony\Component\Process\Process;
 
 class DuckDbSourceAdapter
 {
-    /**
-     * Map of known table names to qualify when schemas are omitted in queries.
-     *
-     * @var array<string, list<string>>
-     */
-    protected const KNOWN_TABLES = [
-        DataSource::DRIVER_PGSQL => ['v_epcontract', 'v_epcontract_detail'],
-        DataSource::DRIVER_SQLSRV => ['production_orders', 'machine_logs'],
-        DataSource::DRIVER_ORACLE => ['EMPLOYEES', 'DEPARTMENTS', 'employees', 'departments'],
-    ];
+    private array $secrets = [];
+
+    public function __construct(protected SqlSafetyValidator $validator) {}
 
     /**
      * Generate LOAD extension SQL for the driver.
@@ -38,36 +32,50 @@ class DuckDbSourceAdapter
      */
     public function generateAttachSql(DataSource $source, ?string $alias = null): string
     {
-        $alias = $alias ?: $source->code;
+        $aliasName = $alias ?: $source->code;
+        $alias = $this->quoteIdentifier($aliasName);
+        $password = (string) $source->password;
+        $pgPassword = str_replace(['\\', "'"], ['\\\\', "\\'"], $password);
+        foreach ([$password, str_replace("'", "''", $password), $pgPassword, str_replace("'", "''", $pgPassword)] as $secret) {
+            if ($secret !== '' && ! in_array($secret, $this->secrets, true)) {
+                $this->secrets[] = $secret;
+            }
+        }
+        usort($this->secrets, fn (string $a, string $b): int => strlen($b) <=> strlen($a));
+
+        if ($source->driver === DataSource::DRIVER_PGSQL) {
+            $values = ['host' => $source->host, 'port' => $source->port ?: 5432, 'user' => $source->username, 'password' => $password, 'dbname' => $source->database_name];
+            $parts = [];
+            foreach ($values as $key => $value) {
+                $value = (string) $value;
+                if ($value === '' || preg_match("/[\\\\'\\s]/", $value)) {
+                    $value = "'".str_replace(['\\', "'"], ['\\\\', "\\'"], $value)."'";
+                }
+                $parts[] = $key.'='.$value;
+            }
+
+            return 'ATTACH '.$this->quoteString(implode(' ', $parts))." AS {$alias} (TYPE postgres, READ_ONLY);";
+        }
 
         return match ($source->driver) {
-            DataSource::DRIVER_PGSQL => sprintf(
-                "ATTACH 'host=%s port=%d user=%s password=%s dbname=%s' AS %s (TYPE postgres, READ_ONLY);",
-                $source->host,
-                $source->port ?: 5432,
-                $source->username,
-                $source->password,
-                $source->database_name,
-                $alias
-            ),
             DataSource::DRIVER_SQLSRV => sprintf(
-                "ATTACH 'Server=%s,%d;Database=%s;User Id=%s;Password=%s;TrustServerCertificate=yes' AS %s (TYPE mssql);",
-                $source->host,
+                "CREATE SECRET %s (TYPE mssql, HOST %s, PORT %d, DATABASE %s, USER %s, PASSWORD %s, trust_server_certificate true);\nATTACH '' AS %s (TYPE mssql, SECRET %s);",
+                $alias,
+                $this->quoteString($source->host),
                 $source->port ?: 1433,
-                $source->database_name,
-                $source->username,
-                $source->password,
+                $this->quoteString((string) $source->database_name),
+                $this->quoteString($source->username),
+                $this->quoteString($password),
+                $alias,
                 $alias
             ),
             DataSource::DRIVER_ORACLE => sprintf(
-                "CREATE SECRET IF NOT EXISTS %s (TYPE oracle, DSN '%s:%d/%s', USER '%s', PASSWORD '%s');\nATTACH '%s' AS %s (TYPE oracle_scanner);",
+                "CREATE SECRET %s (TYPE oracle, DSN %s, USER %s, PASSWORD %s);\nATTACH %s AS %s (TYPE oracle_scanner);",
                 $alias,
-                $source->host,
-                $source->port ?: 1521,
-                $source->service_name ?: 'FREEPDB1',
-                $source->username,
-                $source->password,
-                $alias,
+                $this->quoteString($source->host.':'.($source->port ?: 1521).'/'.($source->service_name ?: 'FREEPDB1')),
+                $this->quoteString($source->username),
+                $this->quoteString($password),
+                $this->quoteString($aliasName),
                 $alias
             ),
             default => throw new InvalidArgumentException("Unsupported driver [{$source->driver}] for DataSource [{$source->code}]."),
@@ -81,7 +89,7 @@ class DuckDbSourceAdapter
     {
         $alias = is_string($sourceOrAlias) ? $sourceOrAlias : $sourceOrAlias->code;
 
-        return "DETACH {$alias};";
+        return 'DETACH '.$this->quoteIdentifier($alias).';';
     }
 
     /**
@@ -99,92 +107,69 @@ class DuckDbSourceAdapter
             $normalized[$cleanKey] = $val;
         }
 
-        // Match string literals, comments, or @parameters in token order so literals and comments are preserved
-        $pattern = '/(\'(?:[^\'\\\\]|\\\\.|(?:\'\'))*\')|(--[^\r\n]*|\/\*[\s\S]*?\*\/)|@([a-zA-Z0-9_]+)\b/';
+        return $this->validator->tokenizeAndSanitize($sql, stripComments: false, transformCode: function (string $code) use ($normalized): string {
+            return (string) preg_replace_callback('/@([a-zA-Z0-9_]+)\b/', function (array $matches) use ($normalized): string {
+                $paramName = $matches[1];
+                $lower = strtolower($paramName);
 
-        return (string) preg_replace_callback($pattern, function ($matches) use ($normalized) {
-            // Group 1: string literal — preserve verbatim
-            if (isset($matches[1]) && $matches[1] !== '') {
-                return $matches[1];
-            }
+                // Special case: @today with no explicit value passed defaults to current date
+                if ($lower === 'today' && ! array_key_exists($lower, $normalized) && ! array_key_exists($paramName, $normalized)) {
+                    return "'".date('Y-m-d')."'";
+                }
 
-            // Group 2: comment — preserve verbatim
-            if (isset($matches[2]) && $matches[2] !== '') {
-                return $matches[2];
-            }
+                $val = null;
+                if (array_key_exists($paramName, $normalized)) {
+                    $val = $normalized[$paramName];
+                } elseif (array_key_exists($lower, $normalized)) {
+                    $val = $normalized[$lower];
+                }
 
-            // Group 3: parameter name
-            if (! isset($matches[3]) || $matches[3] === '') {
-                return $matches[0];
-            }
+                // Bind literal NULL if value is null, empty string, or string "NULL"
+                if ($val === null || $val === '' || (is_string($val) && strtoupper(trim($val)) === 'NULL')) {
+                    return 'NULL';
+                }
 
-            $paramName = $matches[3];
-            $lower = strtolower($paramName);
+                // Boolean
+                if (is_bool($val)) {
+                    return $val ? 'TRUE' : 'FALSE';
+                }
 
-            // Special case: @today with no explicit value passed defaults to current date
-            if ($lower === 'today' && ! array_key_exists($lower, $normalized) && ! array_key_exists($paramName, $normalized)) {
-                return "'".date('Y-m-d')."'";
-            }
+                // Numeric types
+                if (is_int($val) || is_float($val)) {
+                    return (string) $val;
+                }
 
-            $val = null;
-            if (array_key_exists($paramName, $normalized)) {
-                $val = $normalized[$paramName];
-            } elseif (array_key_exists($lower, $normalized)) {
-                $val = $normalized[$lower];
-            }
+                // If string is strictly numeric and token name hints at number (Qty, Amount, Price, Cost, Num)
+                if (is_string($val) && is_numeric($val) && preg_match('/(Qty|Amount|Price|Cost|Num)/i', $paramName)) {
+                    return (string) $val;
+                }
 
-            // Bind literal NULL if value is null, empty string, or string "NULL"
-            if ($val === null || $val === '' || (is_string($val) && strtoupper(trim($val)) === 'NULL')) {
-                return 'NULL';
-            }
+                // String quoting: escape single quotes by doubling them
+                $escaped = str_replace("'", "''", (string) $val);
 
-            // Boolean
-            if (is_bool($val)) {
-                return $val ? 'TRUE' : 'FALSE';
-            }
-
-            // Numeric types
-            if (is_int($val) || is_float($val)) {
-                return (string) $val;
-            }
-
-            // If string is strictly numeric and token name hints at number (Qty, Amount, Price, Cost, Num)
-            if (is_string($val) && is_numeric($val) && preg_match('/(Qty|Amount|Price|Cost|Num)/i', $paramName)) {
-                return (string) $val;
-            }
-
-            // String quoting: escape single quotes by doubling them
-            $escaped = str_replace("'", "''", (string) $val);
-
-            return "'{$escaped}'";
-        }, $sql);
+                return "'{$escaped}'";
+            }, $code);
+        });
     }
 
-    /**
-     * Qualify schema and table references in SQL with the source alias catalog.
-     */
-    public function qualifySqlForSource(string $sql, DataSource $source, ?string $alias = null): string
+    public function generateSearchPathSql(DataSource $source): string
     {
-        $alias = $alias ?: $source->code;
-        $schema = $source->default_schema;
-
-        $qualified = $sql;
-
-        // 1. If default schema is present, qualify schema references: public.table -> alias.public.table
-        if (! empty($schema)) {
-            $pattern = '/(?<![a-zA-Z0-9_.])('.preg_quote($schema, '/').'\.)/i';
-            $qualified = (string) preg_replace($pattern, "{$alias}.$1", $qualified);
+        $path = $this->quoteIdentifier($source->code);
+        if (filled($source->default_schema)) {
+            $path .= '.'.$this->quoteIdentifier($source->default_schema);
         }
 
-        // 2. If table name appears directly without schema after FROM / JOIN
-        $knownTables = self::KNOWN_TABLES[$source->driver] ?? [];
-        foreach ($knownTables as $table) {
-            $tablePattern = '/\b(FROM|JOIN)\s+('.preg_quote($table, '/').')\b(?!\.)/i';
-            $targetTable = ! empty($schema) ? "{$alias}.{$schema}.{$table}" : "{$alias}.{$table}";
-            $qualified = (string) preg_replace($tablePattern, "$1 {$targetTable}", $qualified);
-        }
+        return 'SET search_path = '.$this->quoteString($path).';';
+    }
 
-        return $qualified;
+    public function quoteString(string $value): string
+    {
+        return "'".str_replace("'", "''", $value)."'";
+    }
+
+    public function quoteIdentifier(string $value): string
+    {
+        return '"'.str_replace('"', '""', $value).'"';
     }
 
     /**
@@ -213,7 +198,8 @@ class DuckDbSourceAdapter
         $process->run();
 
         if (! $process->isSuccessful()) {
-            throw new RuntimeException('DuckDB execution failed: '.$process->getErrorOutput());
+            $error = str_replace($this->secrets, '***', $this->redactSecrets($process->getErrorOutput()));
+            throw new RuntimeException('DuckDB execution failed: '.$error);
         }
 
         $output = trim($process->getOutput());
@@ -290,6 +276,8 @@ SQL;
      */
     public function redactSecrets(string $sql): string
     {
+        $sql = (string) preg_replace('/(\bPASSWORD\s+\')([^\']*(?:\'\'[^\']*)*)(\')/is', '$1***$3', $sql);
+        $sql = (string) preg_replace('/(ATTACH\s+\'host=.*?\bpassword\s*=\s*).*?(?=\s+dbname\s*=)/is', '$1***', $sql);
         $lines = explode("\n", $sql);
 
         foreach ($lines as &$line) {

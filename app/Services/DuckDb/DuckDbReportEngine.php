@@ -96,7 +96,7 @@ class DuckDbReportEngine
             }
 
             $sources = new Collection([$source]);
-            $executableSql = $this->adapter->qualifySqlForSource($cleanSql, $source);
+            $executableSql = $cleanSql;
         } else {
             $allActive = DataSource::where('is_active', true)->get();
             if ($allActive->isEmpty()) {
@@ -131,7 +131,7 @@ class DuckDbReportEngine
             'load_statements' => $loadStatements,
             'attach_statements' => $attachStatements,
             'detach_statements' => $detachStatements,
-            'staging_sql' => [sprintf("CREATE TEMPORARY TABLE __adhoc_result AS (\n%s\n);", $executableSql)],
+            'staging_sql' => [isset($source) ? $this->adapter->generateSearchPathSql($source) : '', sprintf("CREATE TEMPORARY TABLE __adhoc_result AS (\n%s\n);", $executableSql)],
             'final_query' => 'SELECT * FROM __adhoc_result',
         ];
 
@@ -230,10 +230,10 @@ class DuckDbReportEngine
             if ($sources->count() > 1) {
                 $unionParts = [];
                 foreach ($sources as $index => $source) {
-                    $qualified = $this->adapter->qualifySqlForSource($view->sql_text, $source);
-                    $bound = $this->sanitizeExecutableSql($this->adapter->bindParameters($qualified, $params));
+                    $stagingSql[] = $this->adapter->generateSearchPathSql($source);
+                    $bound = $this->sanitizeExecutableSql($this->adapter->bindParameters($view->sql_text, $params));
                     $stagingSql[] = sprintf('CREATE TEMPORARY TABLE __part_%d AS %s;', $index, $bound);
-                    $unionParts[] = sprintf("SELECT '%s' AS _source_db, * FROM __part_%d", $source->code, $index);
+                    $unionParts[] = sprintf('SELECT %s AS _source_db, * FROM __part_%d', $this->adapter->quoteString($source->code), $index);
                     $individualQueries[] = [
                         'source_code' => $source->code,
                         'source_name' => $source->name,
@@ -245,8 +245,8 @@ class DuckDbReportEngine
                 $finalQuery = implode("\nUNION ALL\n", $unionParts);
             } else {
                 $source = $sources->first();
-                $qualified = $this->adapter->qualifySqlForSource($view->sql_text, $source);
-                $bound = $this->sanitizeExecutableSql($this->adapter->bindParameters($qualified, $params));
+                $stagingSql[] = $this->adapter->generateSearchPathSql($source);
+                $bound = $this->sanitizeExecutableSql($this->adapter->bindParameters($view->sql_text, $params));
                 $stagingSql[] = sprintf('CREATE TEMPORARY TABLE __part_0 AS %s;', $bound);
                 $finalQuery = 'SELECT * FROM __part_0';
                 $individualQueries[] = [
@@ -269,9 +269,9 @@ class DuckDbReportEngine
                     throw new RuntimeException("Data source [{$sourceCode}] required for alias [{$alias}] not found or inactive.");
                 }
 
-                $qualified = $this->adapter->qualifySqlForSource($sqSql, $source);
-                $bound = $this->sanitizeExecutableSql($this->adapter->bindParameters($qualified, $params));
-                $stagingSql[] = sprintf('CREATE TEMPORARY TABLE %s AS %s;', $alias, $bound);
+                $stagingSql[] = $this->adapter->generateSearchPathSql($source);
+                $bound = $this->sanitizeExecutableSql($this->adapter->bindParameters($sqSql, $params));
+                $stagingSql[] = sprintf('CREATE TEMPORARY TABLE %s AS %s;', $this->adapter->quoteIdentifier($alias), $bound);
                 $individualQueries[] = [
                     'source_code' => $source->code,
                     'source_name' => $source->name,
@@ -312,7 +312,9 @@ class DuckDbReportEngine
         $scriptParts = [
             implode("\n", array_values($plan['load_statements'])),
             implode("\n", $plan['attach_statements']),
+            'SET enable_external_access = false;',
             implode("\n", $plan['staging_sql']),
+            'RESET search_path;',
             implode("\n", $plan['detach_statements']),
             'SET enable_external_access = false;',
         ];
@@ -329,7 +331,7 @@ class DuckDbReportEngine
             $scriptParts[] = sprintf(
                 "INSERT INTO report_meta SELECT '%s' AS snapshot_id, '%s' AS view_code, (SELECT count(*) FROM report_result) AS total_rows, timezone('UTC', current_timestamp) AS created_at, (SELECT to_json(list(column_name)) FROM (SELECT column_name FROM information_schema.columns WHERE table_name = 'report_result' AND column_name != '__row_id' ORDER BY ordinal_position)) AS columns;",
                 $snapshotId,
-                $viewCode
+                str_replace("'", "''", $viewCode)
             );
         } else {
             $scriptParts[] = $cleanFinalQuery.';';
