@@ -158,12 +158,14 @@ class CustomViewResource extends Resource
                                 Hidden::make('source_code')->required()->in(fn (): array => DataSource::pluck('code')->all()),
                                 Text::make(fn (Get $get): string => (string) $get('source_name')),
                                 Checkbox::make('is_allowed')->label('Cho phép')->live()
+                                    ->extraInputAttributes(fn (Get $get): array => ['aria-label' => 'Cho phép '.$get('source_code')])
                                     ->afterStateUpdated(function (bool $state, Set $set): void {
                                         if (! $state) {
                                             $set('is_default', false);
                                         }
                                     }),
                                 Checkbox::make('is_default')->label('Mặc định')->live()
+                                    ->extraInputAttributes(fn (Get $get): array => ['aria-label' => 'Mặc định '.$get('source_code')])
                                     ->disabled(fn (Get $get): bool => ! $get('is_allowed')),
                             ])
                             ->visible(fn (Get $get): bool => $get('execution_mode') === CustomView::MODE_SINGLE_OR_UNION),

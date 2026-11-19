@@ -147,8 +147,12 @@ test.describe.serial('SmartReport E2E Verification Suite', () => {
         await page.locator('input[id*="view_name"]').fill('E2E Dynamic Orders');
 
         await selectFilamentOption(page, 'menu_group_code', 'Sản xuất & Vận hành');
-        await selectFilamentOption(page, 'allowed_sources', 'SQL Server ERP');
-        await selectFilamentOption(page, 'default_sources', 'SQL Server ERP');
+        const northRow = page.locator('tr').filter({ hasText: 'PostgreSQL Nhà Máy Phía Bắc' });
+        const erpRow = page.locator('tr').filter({ hasText: 'SQL Server ERP' });
+        await page.screenshot({ path: test.info().outputPath('source-grid-create.png'), fullPage: true });
+        await erpRow.getByRole('checkbox', { name: 'Cho phép mssql_erp', exact: true }).check();
+        await northRow.getByRole('checkbox', { name: 'Cho phép pg_north', exact: true }).uncheck();
+        await expect(erpRow.getByRole('checkbox', { name: 'Mặc định mssql_erp', exact: true })).toBeChecked();
 
         // Close any open dropdown before filling SQL
         await page.keyboard.press('Escape');
@@ -173,7 +177,10 @@ test.describe.serial('SmartReport E2E Verification Suite', () => {
 
         const modal = page.locator('.fi-modal.fi-modal-open .fi-modal-window').filter({ hasText: 'Kết quả chạy thử SQL (10 dòng đầu tiên)' });
         await expect(modal).toBeVisible({ timeout: 30_000 });
-        await expect(modal).toContainText('10 / 10 dòng');
+        await expect(modal).toHaveCSS('opacity', '1');
+        await expect(modal).toContainText('10 dòng · 6 cột');
+        await expect(modal).toContainText('@Plant = NULL');
+        await expect(modal).not.toContainText('{{ $k }}');
         await expect(modal).toContainText('ms');
         await expect(modal.locator('table tbody tr')).toHaveCount(10);
 
