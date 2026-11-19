@@ -3,14 +3,18 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { expect, type Locator, type Page, test } from '@playwright/test';
+import { expect, type BrowserContext, type Locator, type Page, test } from '@playwright/test';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
-const SCREENSHOTS_DIR = path.join(PROJECT_ROOT, '.agents', 'docs', 'screenshots');
+const SCREENSHOTS_DIR = path.join(PROJECT_ROOT, 'test-results', 'screenshots');
 const DUCKDB_BIN = path.join(PROJECT_ROOT, 'storage', 'bin', 'duckdb');
+let adminCookies: Awaited<ReturnType<BrowserContext['cookies']>> = [];
 
 async function loginAsAdmin(page: Page): Promise<void> {
+    if (adminCookies.length > 0) {
+        await page.context().addCookies(adminCookies);
+    }
     await page.goto('/admin/login');
     if (!page.url().includes('/admin/login')) {
         return;
@@ -22,6 +26,7 @@ async function loginAsAdmin(page: Page): Promise<void> {
 
     await page.waitForURL((url) => !url.pathname.includes('/login'));
     await expect(page.locator('nav.fi-sidebar-nav')).toBeVisible();
+    adminCookies = await page.context().cookies();
 }
 
 async function selectFilamentOption(page: Page, fieldIdPrefix: string, optionLabel: string): Promise<void> {
@@ -71,6 +76,7 @@ test.describe.serial('SmartReport E2E Verification Suite', () => {
             [
                 'artisan',
                 'tinker',
+                '--no-interaction',
                 '--execute=\\App\\Models\\CustomView::where("view_code", "e2e-dynamic-orders")->delete();',
             ],
             { cwd: PROJECT_ROOT, stdio: 'pipe' }
@@ -261,7 +267,7 @@ test.describe.serial('SmartReport E2E Verification Suite', () => {
         await expect(page.locator('main')).toContainText('Applied Criteria (@Parameters)');
         await expect(page.locator('main')).toContainText('Individual Source Queries');
         await expect(page.locator('main')).toContainText('DuckDB Federation SQL');
-        await expect(page.getByRole('button', { name: /Copy SQL/ })).toBeVisible();
+        await expect(page.getByRole('button', { name: /Copy SQL/ }).first()).toBeVisible();
 
         await page.screenshot({
             path: path.join(SCREENSHOTS_DIR, '05-report-runner-tabs-inspector.png'),
@@ -291,7 +297,7 @@ test.describe.serial('SmartReport E2E Verification Suite', () => {
 
         const duckOut = execFileSync(
             DUCKDB_BIN,
-            ['-dark-mode', '-csv', '-noheader', '-c', `SELECT count(*) FROM read_xlsx('${xlsxPath.replaceAll("'", "''")}');`],
+            ['-batch', '-light-mode', '-csv', '-noheader', '-c', `SELECT count(*) FROM read_xlsx('${xlsxPath.replaceAll("'", "''")}');`],
             { encoding: 'utf8', input: '' }
         ).trim();
         expect(Number(duckOut)).toBe(45);

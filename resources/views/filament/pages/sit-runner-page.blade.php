@@ -12,7 +12,7 @@
     @php
         $template = $this->getTemplate();
         $fieldDefs = $template->resolvedStepFields();
-        $allRuns = $template->testRuns()->orderByDesc('id')->get();
+        $allRuns = $this->availableRuns;
         $metrics = $this->metrics;
     @endphp
 

@@ -12,7 +12,6 @@ use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
-use Filament\Forms\Components\KeyValue;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
@@ -78,15 +77,13 @@ class DataSourceResource extends Resource
                                     ->required()
                                     ->in(DataSource::ALLOWED_DRIVERS)
                                     ->columnSpanFull(),
-                                Toggle::make('is_read_only')
-                                    ->label('Chỉ đọc (Read Only)')
-                                    ->default(true),
                                 Toggle::make('is_active')
                                     ->label('Kích hoạt')
                                     ->default(true),
                             ]),
                     ]),
                 Section::make('Thông số kết nối')
+                    ->description('Các nguồn báo cáo chỉ được dùng để đọc dữ liệu.')
                     ->schema([
                         Grid::make(['default' => 1, 'sm' => 2])
                             ->schema([
@@ -127,15 +124,7 @@ class DataSourceResource extends Resource
                                     ->maxLength(255),
                             ]),
                     ]),
-                Section::make('Cấu hình nâng cao')
-                    ->schema([
-                        KeyValue::make('options')
-                            ->label('Tham số bổ sung')
-                            ->keyLabel('Key')
-                            ->valueLabel('Value'),
-                    ])
-                    ->collapsible()
-                    ->collapsed(),
+
             ]);
     }
 
@@ -178,11 +167,6 @@ class DataSourceResource extends Resource
                     ->label('Service')
                     ->placeholder('—')
                     ->toggleable(isToggledHiddenByDefault: true),
-                IconColumn::make('is_read_only')
-                    ->label('Chỉ đọc')
-                    ->boolean()
-                    ->sortable()
-                    ->toggleable(isToggledHiddenByDefault: true),
                 IconColumn::make('is_active')
                     ->label('Kích hoạt')
                     ->boolean()
@@ -198,8 +182,6 @@ class DataSourceResource extends Resource
                     ]),
                 TernaryFilter::make('is_active')
                     ->label('Trạng thái kích hoạt'),
-                TernaryFilter::make('is_read_only')
-                    ->label('Chỉ đọc (Read Only)'),
             ])
             ->recordActions([
                 static::getTestConnectionAction(),

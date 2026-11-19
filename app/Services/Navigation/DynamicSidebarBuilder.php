@@ -2,6 +2,7 @@
 
 namespace App\Services\Navigation;
 
+use App\Filament\Resources\SitTemplateResource;
 use App\Models\CustomView;
 use App\Models\MenuGroup;
 use App\Models\RolePermission;
@@ -44,6 +45,15 @@ class DynamicSidebarBuilder
         $reportGroups = $this->buildReportGroups($user);
         $builder->groups($reportGroups);
 
+        if (! $user->hasAnyRole(['admin', 'super_admin']) && SitTemplateResource::canAccess()) {
+            $builder->items([
+                NavigationItem::make('Kịch bản SIT')
+                    ->icon('heroicon-o-clipboard-document-check')
+                    ->url(SitTemplateResource::getUrl())
+                    ->isActiveWhen(fn (): bool => request()->is('admin/sit-templates*', 'admin/sit-tests/*')),
+            ]);
+        }
+
         // 4. Add System Management Group for Admins and Super Admins
         if ($user->hasAnyRole(['admin', 'super_admin'])) {
             $adminGroup = $this->buildAdminGroup();
@@ -68,6 +78,7 @@ class DynamicSidebarBuilder
             ->get();
 
         $allViews = CustomView::query()
+            ->select(['id', 'view_code', 'view_name', 'menu_group_code', 'roles'])
             ->where('is_active', true)
             ->get();
 

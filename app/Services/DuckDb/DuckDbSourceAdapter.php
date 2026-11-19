@@ -59,7 +59,7 @@ class DuckDbSourceAdapter
 
         return match ($source->driver) {
             DataSource::DRIVER_SQLSRV => sprintf(
-                "CREATE SECRET %s (TYPE mssql, HOST %s, PORT %d, DATABASE %s, USER %s, PASSWORD %s, trust_server_certificate true);\nATTACH '' AS %s (TYPE mssql, SECRET %s);",
+                "CREATE SECRET %s (TYPE mssql, HOST %s, PORT %d, DATABASE %s, USER %s, PASSWORD %s, trust_server_certificate true);\nATTACH '' AS %s (TYPE mssql, SECRET %s, READ_ONLY);",
                 $alias,
                 $this->quoteString($source->host),
                 $source->port ?: 1433,
@@ -70,7 +70,7 @@ class DuckDbSourceAdapter
                 $alias
             ),
             DataSource::DRIVER_ORACLE => sprintf(
-                "CREATE SECRET %s (TYPE oracle, DSN %s, USER %s, PASSWORD %s);\nATTACH %s AS %s (TYPE oracle_scanner);",
+                "CREATE SECRET %s (TYPE oracle, DSN %s, USER %s, PASSWORD %s);\nATTACH %s AS %s (TYPE oracle_scanner, READ_ONLY);",
                 $alias,
                 $this->quoteString($source->host.':'.($source->port ?: 1521).'/'.($source->service_name ?: 'FREEPDB1')),
                 $this->quoteString($source->username),

@@ -13,6 +13,7 @@ use Filament\Pages\Page;
 use Filament\Panel;
 use Filament\Support\Enums\Width;
 use Illuminate\Contracts\Support\Htmlable;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
@@ -548,6 +549,11 @@ class SitRunnerPage extends Page
         }
 
         return $counts;
+    }
+
+    public function getAvailableRunsProperty(): Collection
+    {
+        return $this->getTemplate()->testRuns()->select(['id', 'run_code', 'run_title', 'status'])->orderByDesc('id')->get();
     }
 
     protected function getCurrentRun(): SitTestRun

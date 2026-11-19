@@ -85,14 +85,13 @@ class SitModuleAndExporterTest extends TestCase
             ->assertSuccessful()
             ->assertDontSee('/admin/sit-tests/sit-custom-warehouse');
 
-        // Verify /admin/sit-templates renders minimalist cards (not a table) and supports cardSearch
+        // Verify native card search keeps matching templates visible.
         Livewire::test(ListSitTemplates::class)
-            ->assertSee('sit-cards-grid', false)
             ->assertSee('SIT Kiểm Thử Nhập Xuất Kho')
             ->assertSee('/admin/sit-tests/sit-custom-warehouse', false)
-            ->set('cardSearch', 'WMS Kho Vận')
+            ->searchTable('WMS Kho Vận')
             ->assertSee('SIT Kiểm Thử Nhập Xuất Kho')
-            ->set('cardSearch', 'khong-ton-tai-xyz')
+            ->searchTable('khong-ton-tai-xyz')
             ->assertDontSee('SIT Kiểm Thử Nhập Xuất Kho');
 
         // Verify viewer cannot access super_admin-only SIT template

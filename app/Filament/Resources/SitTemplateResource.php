@@ -3,7 +3,6 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\SitTemplateResource\Pages;
-use App\Models\MenuGroup;
 use App\Models\RolePermission;
 use App\Models\SitTemplate;
 use App\Models\User;
@@ -25,11 +24,12 @@ use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
-use Filament\Tables\Columns\IconColumn;
+use Filament\Support\Enums\FontWeight;
+use Filament\Tables\Columns\Layout\Stack;
 use Filament\Tables\Columns\TextColumn;
-use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use UnitEnum;
 
@@ -47,9 +47,11 @@ class SitTemplateResource extends Resource
 
     protected static ?string $pluralModelLabel = 'Kịch bản SIT';
 
-    public static function canAccess(): bool
+    public static function getEloquentQuery(): Builder
     {
-        return User::current()?->isSuperAdmin() ?? false;
+        $user = User::current();
+
+        return $user === null ? parent::getEloquentQuery()->whereRaw('1 = 0') : parent::getEloquentQuery()->accessibleTo($user);
     }
 
     public static function form(Schema $schema): Schema
@@ -177,57 +179,47 @@ class SitTemplateResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
+            ->modifyQueryUsing(fn (Builder $query): Builder => $query
+                ->select(['id', 'template_code', 'template_name', 'module_name', 'description', 'version', 'is_active', 'updated_at'])
+                ->selectRaw('coalesce(json_array_length(default_steps), 0) as steps_count'))
             ->columns([
-                TextColumn::make('template_name')
-                    ->label('Kịch bản SIT')
-                    ->description(fn (SitTemplate $record): string => $record->template_code)
-                    ->sortable()
-                    ->searchable(['template_name', 'template_code'])
-                    ->wrap(),
-                TextColumn::make('menuGroup.title')
-                    ->label('Nhóm Menu')
-                    ->badge()
-                    ->placeholder('—')
-                    ->sortable(),
-                TextColumn::make('module_name')
-                    ->label('Phân hệ')
-                    ->placeholder('—')
-                    ->searchable()
-                    ->toggleable(),
-                TextColumn::make('test_runs_count')
-                    ->counts('testRuns')
-                    ->label('Số đợt test')
-                    ->badge()
-                    ->color('info')
-                    ->sortable(),
-                TextColumn::make('version')
-                    ->label('Phiên bản')
-                    ->toggleable(isToggledHiddenByDefault: true),
-                IconColumn::make('is_active')
-                    ->label('Kích hoạt')
-                    ->boolean()
-                    ->sortable(),
+                Stack::make([
+                    TextColumn::make('template_name')
+                        ->label('Kịch bản SIT')
+                        ->weight(FontWeight::Bold)
+                        ->description(fn (SitTemplate $record): string => "{$record->template_code} • v{$record->version}")
+                        ->searchable(['template_name', 'template_code', 'module_name'])
+                        ->wrap(),
+                    TextColumn::make('description')->limit(160)->wrap(),
+                    TextColumn::make('module_name')->badge()->placeholder('Chung'),
+                    TextColumn::make('test_runs_count')
+                        ->counts('testRuns')
+                        ->formatStateUsing(fn (int $state, SitTemplate $record): string => "{$record->steps_count} bước mẫu • {$state} đợt test"),
+                    TextColumn::make('is_active')
+                        ->badge()
+                        ->formatStateUsing(fn (bool $state): string => $state ? 'Sẵn sàng' : 'Tạm tắt')
+                        ->color(fn (bool $state): string => $state ? 'success' : 'gray'),
+                ])->space(2),
             ])
+            ->contentGrid(['md' => 2, 'xl' => 3])
+            ->defaultSort('updated_at', 'desc')
+            ->paginationPageOptions([12, 24, 48])
             ->filters([
-                SelectFilter::make('menu_group_code')
-                    ->label('Nhóm Menu')
-                    ->options(fn (): array => MenuGroup::pluck('title', 'group_code')->toArray()),
-                TernaryFilter::make('is_active')
-                    ->label('Trạng thái kích hoạt'),
+                TernaryFilter::make('is_active')->label('Trạng thái kích hoạt')->visible(fn (): bool => User::current()?->isSuperAdmin() ?? false),
             ])
             ->recordActions([
                 Action::make('open_runner')
                     ->label('Chạy SIT')
                     ->icon('heroicon-o-play')
                     ->color('success')
+                    ->visible(fn (SitTemplate $record): bool => $record->is_active)
                     ->url(fn (SitTemplate $record): string => url("/admin/sit-tests/{$record->template_code}")),
                 EditAction::make()->iconButton()->tooltip('Chỉnh sửa'),
-                DeleteAction::make()->iconButton()->tooltip('Xóa'),
+                DeleteAction::make()->iconButton()->tooltip('Xóa')
+                    ->modalDescription('Xóa kịch bản cũng xóa toàn bộ các đợt test của kịch bản này.'),
             ])
             ->toolbarActions([
-                BulkActionGroup::make([
-                    DeleteBulkAction::make(),
-                ]),
+                BulkActionGroup::make([DeleteBulkAction::make()]),
             ]);
     }
 
@@ -239,8 +231,10 @@ class SitTemplateResource extends Resource
     public static function resolveRecordRouteBinding(int|string $key, ?\Closure $modifyQuery = null): ?Model
     {
         return static::getRecordRouteBindingEloquentQuery()
-            ->where('template_code', $key)
-            ->when(is_numeric($key), fn ($q) => $q->orWhere('id', $key))
+            ->where(function (Builder $query) use ($key): void {
+                $query->where('template_code', $key)->when(is_numeric($key), fn (Builder $query): Builder => $query->orWhere('id', $key));
+            })
+            ->when($modifyQuery !== null, $modifyQuery)
             ->first();
     }
 

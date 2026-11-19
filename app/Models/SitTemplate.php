@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -34,6 +35,26 @@ class SitTemplate extends Model
             'roles' => 'array',
             'is_active' => 'boolean',
         ];
+    }
+
+    public function scopeAccessibleTo(Builder $query, User $user): Builder
+    {
+        if ($user->isSuperAdmin()) {
+            return $query;
+        }
+
+        $views = RolePermission::whereIn('role_code', $user->roles ?? [])->pluck('allowed_views')->flatten()->all();
+        $query->where('is_active', true);
+        if (in_array('*', $views, true)) {
+            return $query;
+        }
+
+        return $query->where(function (Builder $scope) use ($user, $views): void {
+            $scope->whereIn('template_code', $views);
+            foreach ($user->roles ?? [] as $role) {
+                $scope->orWhereJsonContains('roles', $role);
+            }
+        });
     }
 
     /**

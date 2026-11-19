@@ -28,7 +28,7 @@
 - **Playwright E2E Tests**:
   - `tests/e2e/smartreport.spec.ts`
   - Runner: `npx playwright test` / `playwright-cli`
-  - Browser: Chromium (Google Chrome) against live `php artisan serve` at `127.0.0.1:8000`
+  - Browser: Chromium (Google Chrome) against live `php artisan serve` at `127.0.0.1:18731`
 
 ## Real-World Application Scenarios (Tier 4)
 | # | Scenario | Features Exercised | Complexity |
@@ -44,3 +44,12 @@
 - Tier 2: ≥5 boundary/edge cases (empty results, NULL parameter handling, `@today`, invalid drivers)
 - Tier 3: Pairwise coverage across drivers (`pgsql` × `sqlsrv`, `oracle` × `sqlsrv`, `pgsql` × `oracle`)
 - Tier 4: ≥5 realistic multi-database reporting scenarios
+
+## Test isolation
+
+PHPUnit uses a separate temporary storage directory per test and SQLite in memory.
+Playwright creates a temporary SQLite database, file cache and storage directory,
+starts its own server on port 18731, then removes its data after the run.
+Both suites read the existing external DB fixtures and never provision them implicitly.
+To reset sample tables explicitly, run `php artisan smartreport:provision-test-databases --no-interaction`.
+Browser screenshots are saved under the ignored `test-results/` directory.
