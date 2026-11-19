@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\Sql\SqlParameterExtractor;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -62,6 +63,13 @@ class CustomView extends Model
             'filters' => 'array',
             'is_active' => 'boolean',
         ];
+    }
+
+    protected static function booted(): void
+    {
+        static::saving(function (self $view): void {
+            $view->filters = app(SqlParameterExtractor::class)->synchronizeFilters($view);
+        });
     }
 
     public function setSourceSelectionsAttribute(array $rows): void

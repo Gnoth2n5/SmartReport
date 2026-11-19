@@ -347,8 +347,8 @@ class CustomViewBuilderTest extends TestCase
         // Verify inferred types from SqlParameterExtractor
         foreach ($filters as $filter) {
             if ($filter['name'] === 'Plant') {
-                $this->assertSame('select', $filter['type']);
-                $this->assertNotEmpty($filter['options'] ?? null);
+                $this->assertSame('text', $filter['type']);
+                $this->assertEmpty($filter['options'] ?? null);
             } elseif ($filter['name'] === 'StartDate') {
                 $this->assertSame('date', $filter['type']);
             } elseif ($filter['name'] === 'MinAmount') {

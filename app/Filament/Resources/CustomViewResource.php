@@ -124,6 +124,7 @@ class CustomViewResource extends Resource
                                 CustomView::MODE_FEDERATED_JOIN => 'Cross-Engine Federated JOIN (federated_join)',
                             ])
                             ->default(CustomView::MODE_SINGLE_OR_UNION)
+                            ->afterStateUpdated(fn (Get $get, Set $set) => static::synchronizeFormFilters($get, $set))
                             ->in(CustomView::EXECUTION_MODES)
                             ->required()
                             ->live(),
@@ -172,6 +173,7 @@ class CustomViewResource extends Resource
 
                         // Mode B: Federated Join configuration
                         Repeater::make('source_queries')
+                            ->afterStateUpdated(fn (Get $get, Set $set) => static::synchronizeFormFilters($get, $set))
                             ->label('Cấu hình các truy vấn nguồn (Source Queries)')
                             ->schema([
                                 Select::make('source_code')
@@ -187,6 +189,8 @@ class CustomViewResource extends Resource
                                     ->label('Câu lệnh SQL nguồn (Query / SQL Text)')
                                     ->required()
                                     ->rows(3)
+                                    ->live(onBlur: true)
+                                    ->afterStateUpdated(fn (Get $get, Set $set) => static::synchronizeFormFilters($get, $set))
                                     ->placeholder('SELECT EMP_NO, FULL_NAME FROM APP.EMPLOYEES WHERE ...')
                                     ->columnSpanFull(),
                             ])
@@ -205,66 +209,33 @@ class CustomViewResource extends Resource
                                 ? 'Câu lệnh SQL Federated Join (DuckDB kết hợp các bảng tạm)'
                                 : 'Câu lệnh SQL truy vấn')
                             ->rows(8)
+                            ->live(onBlur: true)
+                            ->afterStateUpdated(fn (Get $get, Set $set) => static::synchronizeFormFilters($get, $set))
                             ->required()
                             ->placeholder('SELECT * FROM ... WHERE (@param IS NULL OR col = @param)')
                             ->helperText('Hỗ trợ tham số bắt đầu bằng ký tự @ (vd: @StartDate, @Plant, @Status).'),
                     ]),
 
                 // 4. Dynamic Filters Repeater
-                Section::make('Bộ lọc tham số động (@param)')
-                    ->description('Cấu hình các tiêu chí lọc người dùng nhập khi chạy báo cáo')
-                    ->headerActions([
-                        static::getAutoDetectParametersAction('section_auto_detect_params'),
-                    ])
+                Section::make('Bộ lọc')
+                    ->description('Tự đồng bộ từ biến @param trong SQL; sửa nhãn, kiểu và mặc định khi cần.')
                     ->schema([
                         Repeater::make('filters')
-                            ->label('Danh sách bộ lọc')
+                            ->label('Tham số SQL')
+                            ->table([TableColumn::make('Biến'), TableColumn::make('Nhãn'), TableColumn::make('Kiểu'), TableColumn::make('Mặc định'), TableColumn::make('Tùy chọn')])
+                            ->addable(false)->deletable(false)->reorderable(false)
                             ->schema([
-                                Grid::make(['default' => 1, 'md' => 3])
-                                    ->schema([
-                                        TextInput::make('name')
-                                            ->label('Tên tham số (@param)')
-                                            ->required()
-                                            ->placeholder('vd: Status'),
-                                        TextInput::make('label')
-                                            ->label('Nhãn hiển thị')
-                                            ->required()
-                                            ->placeholder('vd: Trạng thái hợp đồng'),
-                                        Select::make('type')
-                                            ->label('Kiểu nhập liệu')
-                                            ->options([
-                                                'text' => 'Văn bản (text)',
-                                                'date' => 'Ngày tháng (date)',
-                                                'number' => 'Số (number)',
-                                                'select' => 'Danh sách chọn (select)',
-                                            ])
-                                            ->default('text')
-                                            ->required()
-                                            ->live(),
-                                    ]),
-                                Grid::make(['default' => 1, 'sm' => 2])
-                                    ->schema([
-                                        TextInput::make('default_value')
-                                            ->label('Giá trị mặc định')
-                                            ->nullable(),
-                                        Toggle::make('is_required')
-                                            ->label('Bắt buộc nhập')
-                                            ->default(false),
-                                    ]),
-                                KeyValue::make('options')
-                                    ->label('Danh sách tùy chọn (Key => Label)')
-                                    ->keyLabel('Mã gửi vào SQL')
-                                    ->valueLabel('Tên hiển thị')
-                                    ->keyPlaceholder('vd: COMPLETED')
-                                    ->valuePlaceholder('vd: Hoàn tất')
-                                    ->visible(fn (Get $get): bool => in_array($get('type'), ['select']) || in_array($get('input_type'), ['select'])),
-                            ])
-                            ->addActionLabel('Thêm tham số bộ lọc')
-                            ->defaultItems(0)
-                            ->collapsible(),
+                                TextInput::make('name')->label('Biến')->readOnly()->required(),
+                                TextInput::make('label')->label('Nhãn')->required(),
+                                Select::make('type')->label('Kiểu')->options(['text' => 'Văn bản', 'date' => 'Ngày', 'number' => 'Số', 'select' => 'Danh sách'])->required()->live(),
+                                TextInput::make('default_value')->label('Mặc định')->nullable(),
+                                Section::make('Chi tiết')->collapsed()->schema([
+                                    Toggle::make('is_required')->label('Bắt buộc')->default(false),
+                                    KeyValue::make('options')->label('Danh sách giá trị')->visible(fn (Get $get): bool => $get('type') === 'select'),
+                                ]),
+                            ]),
                     ]),
 
-                // 5. RBAC Roles Assignment
                 Section::make('Quyền truy cập')
                     ->description('Cấp và thu hồi quyền tại màn hình Phân quyền. Super admin luôn có quyền.')
                     ->schema([
@@ -401,78 +372,23 @@ class CustomViewResource extends Resource
         $extractor ??= app(SqlParameterExtractor::class);
         $data = static::resolveFormData($action, $livewire, $record);
 
-        $sqlText = (string) ($data['sql_text'] ?? '');
-        $executionMode = (string) ($data['execution_mode'] ?? CustomView::MODE_SINGLE_OR_UNION);
-        $sourceQueries = (array) ($data['source_queries'] ?? []);
-        $existingFilters = (array) ($data['filters'] ?? []);
-
-        $sqls = trim($sqlText) !== '' ? [$sqlText] : [];
-        if ($executionMode === CustomView::MODE_FEDERATED_JOIN) {
-            foreach ($sourceQueries as $sq) {
-                $q = (string) ($sq['sql_text'] ?? $sq['query'] ?? '');
-                if (trim($q) !== '') {
-                    $sqls[] = $q;
-                }
-            }
+        $view = new CustomView(array_intersect_key($data, array_flip(['sql_text', 'execution_mode', 'source_queries', 'filters'])));
+        $filters = $extractor->synchronizeFilters($view);
+        if ($livewire !== null) {
+            $livewire->data['filters'] = $filters;
         }
+        Notification::make()->title('Đã nhận diện tham số')->body('Tìm thấy '.count($filters).' tham số trong câu lệnh SQL.')->success()->send();
+    }
 
-        if (empty($sqls)) {
-            Notification::make()->title('Chưa có câu lệnh SQL')->body('Vui lòng nhập câu lệnh SQL trước khi nhận diện tham số.')->warning()->send();
-
-            return;
-        }
-
-        $allTokens = [];
-        foreach ($sqls as $sql) {
-            foreach ($extractor->extractTokens($sql) as $token) {
-                if (! in_array($token, $allTokens, true)) {
-                    $allTokens[] = $token;
-                }
-            }
-        }
-
-        if (empty($allTokens)) {
-            Notification::make()->title('Không tìm thấy tham số')->body('Không phát hiện tham số @tham_so nào trong câu lệnh SQL.')->info()->send();
-
-            return;
-        }
-
-        $existingMap = [];
-        foreach ($existingFilters as $f) {
-            if (is_array($f)) {
-                $key = strtolower(ltrim((string) ($f['name'] ?? $f['param_name'] ?? ''), '@'));
-                if ($key !== '') {
-                    $existingMap[$key] = $f;
-                }
-            }
-        }
-
-        $newFilters = [];
-        foreach ($allTokens as $token) {
-            $cleanToken = ltrim($token, '@');
-            $key = strtolower($cleanToken);
-
-            if (isset($existingMap[$key])) {
-                $existing = $existingMap[$key];
-                $existing['name'] = $existing['name'] ?? $existing['param_name'] ?? $cleanToken;
-                $existing['type'] = $existing['type'] ?? $existing['input_type'] ?? 'text';
-                $existing['label'] = $existing['label'] ?? $cleanToken;
-                $existing['is_required'] = (bool) ($existing['is_required'] ?? false);
-                $newFilters[] = $existing;
-            } else {
-                $newFilters[] = $extractor->inferParameterDefinition($cleanToken);
-            }
-        }
-
-        if ($livewire && isset($livewire->data) && is_array($livewire->data)) {
-            $livewire->data['filters'] = $newFilters;
-        }
-
-        Notification::make()
-            ->title('Đã nhận diện tham số')
-            ->body('Tìm thấy '.count($newFilters).' tham số trong câu lệnh SQL.')
-            ->success()
-            ->send();
+    public static function synchronizeFormFilters(Get $get, Set $set): void
+    {
+        $view = new CustomView([
+            'sql_text' => $get('data.sql_text', isAbsolute: true) ?? '',
+            'execution_mode' => $get('data.execution_mode', isAbsolute: true),
+            'source_queries' => $get('data.source_queries', isAbsolute: true) ?? [],
+            'filters' => $get('data.filters', isAbsolute: true) ?? [],
+        ]);
+        $set('data.filters', app(SqlParameterExtractor::class)->synchronizeFilters($view), isAbsolute: true);
     }
 
     /**

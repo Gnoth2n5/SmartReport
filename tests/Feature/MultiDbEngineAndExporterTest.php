@@ -455,12 +455,12 @@ class MultiDbEngineAndExporterTest extends TestCase
         $this->assertSame(date('Y-m-d'), $tokenMap['today']['default_value']);
         $this->assertSame('number', $tokenMap['OrderQty']['type']);
         $this->assertSame('number', $tokenMap['ItemPrice']['type']);
-        $this->assertSame('select', $tokenMap['Plant']['type']);
-        $this->assertArrayHasKey('NORTH', $tokenMap['Plant']['options']);
-        $this->assertSame('select', $tokenMap['DeptCode']['type']);
-        $this->assertArrayHasKey('PRD', $tokenMap['DeptCode']['options']);
-        $this->assertSame('select', $tokenMap['Status']['type']);
-        $this->assertArrayHasKey('ACTIVE', $tokenMap['Status']['options']);
+        $this->assertSame('text', $tokenMap['Plant']['type']);
+        $this->assertNull($tokenMap['Plant']['options']);
+        $this->assertSame('text', $tokenMap['DeptCode']['type']);
+        $this->assertNull($tokenMap['DeptCode']['options']);
+        $this->assertSame('text', $tokenMap['Status']['type']);
+        $this->assertNull($tokenMap['Status']['options']);
         $this->assertSame('text', $tokenMap['CustomerNote']['type']);
     }
 

@@ -54,8 +54,8 @@ class SqlParameterExtractor
             $unique = [];
             foreach ($rawTokens as $token) {
                 $trimmed = trim($token);
-                if ($trimmed !== '' && ! in_array($trimmed, $unique, true)) {
-                    $unique[] = $trimmed;
+                if ($trimmed !== '' && ! isset($unique[strtolower($trimmed)])) {
+                    $unique[strtolower($trimmed)] = $trimmed;
                 }
             }
 
@@ -78,7 +78,7 @@ class SqlParameterExtractor
             $sqls[] = $view->sql_text;
         }
 
-        if (is_array($view->source_queries)) {
+        if ($view->isFederatedJoin() && is_array($view->source_queries)) {
             foreach ($view->source_queries as $sourceQuery) {
                 if (is_array($sourceQuery) && ! empty($sourceQuery['sql_text'])) {
                     $sqls[] = $sourceQuery['sql_text'];
@@ -89,8 +89,8 @@ class SqlParameterExtractor
         $allTokens = [];
         foreach ($sqls as $sql) {
             foreach ($this->extractTokens($sql) as $token) {
-                if (! in_array($token, $allTokens, true)) {
-                    $allTokens[] = $token;
+                if (! isset($allTokens[strtolower($token)])) {
+                    $allTokens[strtolower($token)] = $token;
                 }
             }
         }
@@ -101,6 +101,24 @@ class SqlParameterExtractor
         }
 
         return $parameters;
+    }
+
+    public function synchronizeFilters(CustomView $view): array
+    {
+        $existing = [];
+        foreach ($view->filters ?? [] as $filter) {
+            $key = strtolower(ltrim((string) ($filter['name'] ?? $filter['param_name'] ?? ''), '@'));
+            $existing[$key] ??= $filter;
+        }
+
+        return array_map(function (array $inferred) use ($existing): array {
+            $key = strtolower($inferred['name']);
+            $filter = $existing[$key] ?? [];
+            $filter['name'] = ltrim((string) ($filter['name'] ?? $filter['param_name'] ?? $inferred['name']), '@');
+            $filter['type'] = $filter['type'] ?? $filter['input_type'] ?? $inferred['type'];
+
+            return array_replace($inferred, $filter);
+        }, $this->extractFromCustomView($view));
     }
 
     /**
@@ -120,7 +138,7 @@ class SqlParameterExtractor
         // 1. @today -> Date input, default date('now')
         if ($lower === 'today') {
             $type = 'date';
-            $defaultValue = date('Y-m-d');
+            $defaultValue = now()->format('Y-m-d');
         }
         // 2. Matches .*Date.* or .*Time.* -> Date input
         elseif (preg_match('/(Date|Time)/i', $name)) {
@@ -130,16 +148,6 @@ class SqlParameterExtractor
         elseif (preg_match('/(Qty|Amount|Price|Cost|Num)/i', $name)) {
             $type = 'number';
         }
-        // 4. Matches .*Plant.*, .*Dept.*, .*Status.* -> Select input with suggested options
-        elseif (preg_match('/(Plant|Dept|Status)/i', $name)) {
-            $type = 'select';
-            $options = $this->suggestOptionsForParameter($name);
-        }
-        // 5. Default -> Text input
-        else {
-            $type = 'text';
-        }
-
         $label = $this->generateLabel($name);
 
         return [
@@ -150,43 +158,6 @@ class SqlParameterExtractor
             'options' => $options,
             'is_required' => false,
         ];
-    }
-
-    /**
-     * Suggest dropdown options for common enterprise parameters.
-     *
-     * @return array<string, string>
-     */
-    protected function suggestOptionsForParameter(string $paramName): array
-    {
-        if (preg_match('/Plant/i', $paramName)) {
-            return [
-                'NORTH' => 'Miền Bắc',
-                'SOUTH' => 'Miền Nam',
-            ];
-        }
-
-        if (preg_match('/Dept/i', $paramName)) {
-            return [
-                'PRD' => 'Sản xuất & May mặc',
-                'QA' => 'Quản lý chất lượng',
-                'TECH' => 'Kỹ thuật bảo trì',
-                'LOG' => 'Logistics & Kho vận',
-                'EXEC' => 'Ban giám đốc',
-            ];
-        }
-
-        if (preg_match('/Status/i', $paramName)) {
-            return [
-                'ACTIVE' => 'Hoạt động',
-                'IN_PROGRESS' => 'Đang thực hiện',
-                'COMPLETED' => 'Hoàn tất',
-                'PENDING' => 'Chờ duyệt',
-                'CANCELLED' => 'Đã hủy',
-            ];
-        }
-
-        return [];
     }
 
     /**
