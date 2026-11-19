@@ -128,8 +128,10 @@ class CustomViewBuilderTest extends TestCase
             'view_name' => 'Báo Cáo Hợp Đồng Chi Nhánh Bắc & Nam',
             'menu_group_code' => 'logistics',
             'execution_mode' => CustomView::MODE_SINGLE_OR_UNION,
-            'allowed_sources' => ['pg_north', 'pg_south'],
-            'default_sources' => ['pg_north'],
+            'source_selections' => [
+                ['source_code' => 'pg_north', 'source_name' => 'North', 'is_allowed' => true, 'is_default' => true],
+                ['source_code' => 'pg_south', 'source_name' => 'South', 'is_allowed' => true, 'is_default' => false],
+            ],
             'sql_text' => 'SELECT c.contract_no, c.customer_name, c.total_amount FROM public.v_epcontract c WHERE (@Status IS NULL OR c.status = @Status)',
             'filters' => [
                 [

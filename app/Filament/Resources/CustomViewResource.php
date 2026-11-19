@@ -17,8 +17,11 @@ use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
+use Filament\Forms\Components\Checkbox;
+use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\KeyValue;
 use Filament\Forms\Components\Repeater;
+use Filament\Forms\Components\Repeater\TableColumn;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
@@ -30,6 +33,7 @@ use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Text;
 use Filament\Schemas\Components\Utilities\Get;
+use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
@@ -124,23 +128,43 @@ class CustomViewResource extends Resource
                             ->required()
                             ->live(),
 
-                        // Mode A: Single or Union configuration
-                        Grid::make(['default' => 1, 'md' => 2])
+                        Repeater::make('source_selections')
+                            ->label('Nguồn dữ liệu')
+                            ->table([TableColumn::make('Nguồn'), TableColumn::make('Cho phép'), TableColumn::make('Mặc định')])
+                            ->addable(false)->deletable(false)->reorderable(false)
+                            ->afterStateHydrated(function (Repeater $component, ?CustomView $record): void {
+                                $sources = DataSource::orderBy('id')->get(['code', 'name', 'is_active']);
+                                $allowed = $record !== null ? ($record->allowed_sources ?: $sources->where('is_active', true)->pluck('code')->all()) : array_slice($sources->where('is_active', true)->pluck('code')->all(), 0, 1);
+                                $defaults = $record?->defaultSourceCodes($sources->pluck('code')->all()) ?? $allowed;
+                                $component->state($sources->map(fn (DataSource $source): array => [
+                                    'source_code' => $source->code,
+                                    'source_name' => $source->name.($source->is_active ? '' : ' (Đã tắt)'),
+                                    'is_allowed' => in_array($source->code, $allowed, true),
+                                    'is_default' => in_array($source->code, $defaults, true),
+                                ])->all());
+                            })
+                            ->afterStateUpdated(function (Repeater $component, array $state): void {
+                                $allowed = array_filter($state, fn (array $row): bool => (bool) ($row['is_allowed'] ?? false));
+                                if (count($allowed) === 1) {
+                                    $only = array_values($allowed)[0]['source_code'];
+                                    foreach ($state as &$row) {
+                                        $row['is_default'] = $row['source_code'] === $only;
+                                    }
+                                    unset($row);
+                                    $component->state($state);
+                                }
+                            })
                             ->schema([
-                                Select::make('allowed_sources')
-                                    ->label('Nguồn dữ liệu cho phép (Allowed Sources)')
-                                    ->multiple()
-                                    ->options(fn (): array => DataSource::where('is_active', true)->pluck('name', 'code')->toArray())
-                                    ->preload()
-                                    ->searchable()
-                                    ->helperText('Danh sách các cơ sở dữ liệu được phép chọn khi chạy báo cáo.'),
-                                Select::make('default_sources')
-                                    ->label('Nguồn dữ liệu mặc định (Default Sources)')
-                                    ->multiple()
-                                    ->options(fn (): array => DataSource::where('is_active', true)->pluck('name', 'code')->toArray())
-                                    ->preload()
-                                    ->searchable()
-                                    ->helperText('Nguồn dữ liệu được nạp mặc định ban đầu.'),
+                                Hidden::make('source_code')->required()->in(fn (): array => DataSource::pluck('code')->all()),
+                                Text::make(fn (Get $get): string => (string) $get('source_name')),
+                                Checkbox::make('is_allowed')->label('Cho phép')->live()
+                                    ->afterStateUpdated(function (bool $state, Set $set): void {
+                                        if (! $state) {
+                                            $set('is_default', false);
+                                        }
+                                    }),
+                                Checkbox::make('is_default')->label('Mặc định')->live()
+                                    ->disabled(fn (Get $get): bool => ! $get('is_allowed')),
                             ])
                             ->visible(fn (Get $get): bool => $get('execution_mode') === CustomView::MODE_SINGLE_OR_UNION),
 
@@ -530,7 +554,12 @@ class CustomViewResource extends Resource
                 'filters' => $filters,
             ]);
 
-            $selectedSources = $defaultSources ?: $allowedSources ?: ($executionMode === CustomView::MODE_SINGLE_OR_UNION ? ['pg_north'] : []);
+            if ($executionMode === CustomView::MODE_SINGLE_OR_UNION && isset($data['source_selections'])) {
+                $tempView->source_selections = $data['source_selections'];
+            }
+            $selectedSources = $executionMode === CustomView::MODE_SINGLE_OR_UNION
+                ? $tempView->defaultSourceCodes(DataSource::where('is_active', true)->orderBy('id')->pluck('code')->all())
+                : [];
             $params = [];
             foreach ($filters as $f) {
                 $pName = $f['name'] ?? $f['param_name'] ?? null;

@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Validation\ValidationException;
 
 class CustomView extends Model
 {
@@ -38,6 +39,7 @@ class CustomView extends Model
         'execution_mode',
         'allowed_sources',
         'default_sources',
+        'source_selections',
         'source_queries',
         'sql_text',
         'filters',
@@ -60,6 +62,38 @@ class CustomView extends Model
             'filters' => 'array',
             'is_active' => 'boolean',
         ];
+    }
+
+    public function setSourceSelectionsAttribute(array $rows): void
+    {
+        $allowed = [];
+        $defaults = [];
+        foreach ($rows as $row) {
+            if ($row['is_allowed'] ?? false) {
+                $allowed[] = $row['source_code'];
+                if ($row['is_default'] ?? false) {
+                    $defaults[] = $row['source_code'];
+                }
+            } elseif ($row['is_default'] ?? false) {
+                throw ValidationException::withMessages(['source_selections' => 'Nguồn mặc định phải nằm trong nguồn được cho phép.']);
+            }
+        }
+        if ($allowed === []) {
+            throw ValidationException::withMessages(['source_selections' => 'Chọn ít nhất một nguồn dữ liệu.']);
+        }
+        $this->allowed_sources = array_values(array_unique($allowed));
+        $this->default_sources = count($this->allowed_sources) === 1 ? $this->allowed_sources : array_values(array_unique($defaults));
+    }
+
+    /** @param list<string> $availableCodes
+     * @return list<string>
+     */
+    public function defaultSourceCodes(array $availableCodes): array
+    {
+        $permitted = array_values(array_intersect($availableCodes, $this->allowed_sources ?: $availableCodes));
+        $defaults = array_values(array_intersect($this->default_sources ?? [], $permitted));
+
+        return $defaults ?: array_slice($permitted, 0, 1);
     }
 
     /**

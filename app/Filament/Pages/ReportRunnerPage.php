@@ -581,12 +581,7 @@ class ReportRunnerPage extends Page
     {
         if ($view->isSingleOrUnion()) {
             $permitted = $this->getPermittedSourceCodes($view);
-            $defaults = $this->sanitizeScalarList((array) ($view->default_sources ?? []));
-            $defaults = array_values(array_intersect($defaults, $permitted));
-
-            $this->selectedSources = ! empty($defaults)
-                ? $defaults
-                : (! empty($permitted) ? [$permitted[0]] : []);
+            $this->selectedSources = $view->defaultSourceCodes($permitted);
         } else {
             $codes = [];
             foreach ($view->source_queries ?? [] as $sq) {

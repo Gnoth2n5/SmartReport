@@ -178,15 +178,23 @@ class DuckDbReportEngine
         // 2. Resolve required data sources
         /** @var Collection<int, DataSource> $sources */
         if ($view->isSingleOrUnion()) {
+            $activeQuery = DataSource::where('is_active', true)->orderBy('id');
+            if (! empty($view->allowed_sources)) {
+                $activeQuery->whereIn('code', $view->allowed_sources);
+            }
+            $activeSources = $activeQuery->get();
             $codes = ! empty($selectedSourceCodes)
                 ? $selectedSourceCodes
-                : ($view->default_sources ?: $view->allowed_sources ?: []);
+                : $view->defaultSourceCodes($activeSources->pluck('code')->all());
 
             if (empty($codes)) {
                 throw new InvalidArgumentException("No data source selected for view [{$view->view_code}].");
             }
 
-            $sources = DataSource::whereIn('code', $codes)->where('is_active', true)->get();
+            if (array_diff($codes, $activeSources->pluck('code')->all()) !== []) {
+                throw new InvalidArgumentException('Selected sources are inactive or outside the sources allowed for this report.');
+            }
+            $sources = $activeSources->whereIn('code', $codes)->values();
             if ($sources->isEmpty()) {
                 throw new InvalidArgumentException('None of the selected data sources ['.implode(', ', $codes).'] are active.');
             }
