@@ -28,9 +28,9 @@ class DuckDbReportEngine
      * @param  array<string, mixed>  $params
      * @return string Snapshot ID (UUID)
      */
-    public function executeAndCreateSnapshot(CustomView $view, array $selectedSourceCodes = [], array $params = []): string
+    public function executeAndCreateSnapshot(CustomView $view, array $selectedSourceCodes = [], array $params = [], ?int $limit = null): string
     {
-        $plan = $this->compileExecutionPlan($view, $selectedSourceCodes, $params);
+        $plan = $this->compileExecutionPlan($view, $selectedSourceCodes, $params, $limit);
 
         // Prepare snapshot file path
         $snapshotId = (string) Str::uuid();
@@ -162,7 +162,7 @@ class DuckDbReportEngine
      *     individual_queries: list<array{source_code: string, source_name: string, driver: string, alias: string, sql: string}>
      * }
      */
-    protected function compileExecutionPlan(CustomView $view, array $selectedSourceCodes = [], array $params = []): array
+    protected function compileExecutionPlan(CustomView $view, array $selectedSourceCodes = [], array $params = [], ?int $limit = null): array
     {
         // 1. Validate SQL safety
         $this->safetyValidator->validate($view->sql_text);
@@ -232,6 +232,9 @@ class DuckDbReportEngine
                 foreach ($sources as $index => $source) {
                     $stagingSql[] = $this->adapter->generateSearchPathSql($source);
                     $bound = $this->sanitizeExecutableSql($this->adapter->bindParameters($view->sql_text, $params));
+                    if ($limit !== null) {
+                        $bound = sprintf('SELECT * FROM (%s) LIMIT %d', $bound, max(1, $limit));
+                    }
                     $stagingSql[] = sprintf('CREATE TEMPORARY TABLE __part_%d AS %s;', $index, $bound);
                     $unionParts[] = sprintf('SELECT %s AS _source_db, * FROM __part_%d', $this->adapter->quoteString($source->code), $index);
                     $individualQueries[] = [
@@ -247,6 +250,9 @@ class DuckDbReportEngine
                 $source = $sources->first();
                 $stagingSql[] = $this->adapter->generateSearchPathSql($source);
                 $bound = $this->sanitizeExecutableSql($this->adapter->bindParameters($view->sql_text, $params));
+                if ($limit !== null) {
+                    $bound = sprintf('SELECT * FROM (%s) LIMIT %d', $bound, max(1, $limit));
+                }
                 $stagingSql[] = sprintf('CREATE TEMPORARY TABLE __part_0 AS %s;', $bound);
                 $finalQuery = 'SELECT * FROM __part_0';
                 $individualQueries[] = [
@@ -283,6 +289,10 @@ class DuckDbReportEngine
 
             // Final federated join query references the local temporary tables
             $finalQuery = $this->sanitizeExecutableSql($this->adapter->bindParameters($view->sql_text, $params));
+        }
+
+        if ($limit !== null) {
+            $finalQuery = sprintf('SELECT * FROM (%s) LIMIT %d', $finalQuery, max(1, $limit));
         }
 
         return [
@@ -371,7 +381,8 @@ class DuckDbReportEngine
     public function preview(CustomView $view, array $selectedSourceCodes = [], array $params = [], int $limit = 10): array
     {
         $start = microtime(true);
-        $snapshotId = $this->executeAndCreateSnapshot($view, $selectedSourceCodes, $params);
+        $limit = max(1, $limit);
+        $snapshotId = $this->executeAndCreateSnapshot($view, $selectedSourceCodes, $params, $limit);
 
         try {
             $pageData = $this->getPage($snapshotId, 1, $limit);
@@ -382,10 +393,9 @@ class DuckDbReportEngine
                 'totalRows' => $pageData['totalRows'],
                 'columns' => $pageData['columns'],
                 'latency_ms' => $latency,
-                'snapshotId' => $snapshotId,
             ];
         } finally {
-            // Keep snapshot or clean up as needed
+            $this->snapshotManager->deleteSnapshot($snapshotId);
         }
     }
 }

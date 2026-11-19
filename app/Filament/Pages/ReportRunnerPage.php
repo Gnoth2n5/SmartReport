@@ -279,7 +279,7 @@ class ReportRunnerPage extends Page
         $snapshotManager = app(SnapshotManager::class);
 
         if (blank($this->snapshotId) || ! $snapshotManager->snapshotExists($this->snapshotId)) {
-            $this->snapshotId = null;
+            $this->resetSnapshotState();
             Notification::make()
                 ->title('Snapshot đã hết hạn hoặc không tồn tại')
                 ->body('Vui lòng nhấn "Tra cứu" để tải lại dữ liệu.')
@@ -482,7 +482,7 @@ class ReportRunnerPage extends Page
         /** @var SnapshotManager $snapshotManager */
         $snapshotManager = app(SnapshotManager::class);
         if (blank($this->snapshotId) || ! $snapshotManager->snapshotExists($this->snapshotId)) {
-            $this->snapshotId = null;
+            $this->resetSnapshotState();
             Notification::make()
                 ->title('Snapshot không khả dụng')
                 ->body('Snapshot đã hết hạn hoặc chưa được tạo. Vui lòng nhấn "Tra cứu" trước khi xuất dữ liệu.')

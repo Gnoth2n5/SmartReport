@@ -463,7 +463,7 @@ class CustomViewResource extends Resource
                 } else {
                     Notification::make()
                         ->title('Chạy thử thành công')
-                        ->body("Tổng số dòng: {$res['totalRows']} | Thời gian: {$res['latencyMs']} ms | Cột: ".implode(', ', array_slice($res['columns'], 0, 5)))
+                        ->body("Dòng xem trước: {$res['totalRows']} | Thời gian: {$res['latencyMs']} ms | Cột: ".implode(', ', array_slice($res['columns'], 0, 5)))
                         ->success()
                         ->send();
                 }

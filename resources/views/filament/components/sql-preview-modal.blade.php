@@ -25,7 +25,7 @@
                 <div class="text-lg font-bold text-emerald-600 dark:text-emerald-400 font-mono">{{ $latency }} ms</div>
             </div>
             <div class="p-3 bg-gray-50 dark:bg-gray-800/60 rounded-lg border border-gray-200 dark:border-gray-700">
-                <div class="text-xs text-gray-500 dark:text-gray-400">Tổng số dòng</div>
+                <div class="text-xs text-gray-500 dark:text-gray-400">Dòng xem trước</div>
                 <div class="text-lg font-bold text-primary-600 dark:text-primary-400 font-mono">{{ number_format($total) }}</div>
             </div>
             <div class="p-3 bg-gray-50 dark:bg-gray-800/60 rounded-lg border border-gray-200 dark:border-gray-700">

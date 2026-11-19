@@ -37,7 +37,10 @@ class SnapshotManager
      */
     public function snapshotExists(string $snapshotId): bool
     {
-        return file_exists($this->getSnapshotPath($snapshotId));
+        $path = $this->getSnapshotPath($snapshotId);
+        clearstatcache(true, $path);
+
+        return is_file($path) && filemtime($path) > now()->timestamp - max(1, (int) config('smartreport.snapshot_ttl_minutes', 30)) * 60;
     }
 
     /**
@@ -49,11 +52,12 @@ class SnapshotManager
     public function getPage(string $snapshotId, int $page = 1, int $perPage = 10): array
     {
         $snapshotPath = $this->getSnapshotPath($snapshotId);
-        if (! file_exists($snapshotPath)) {
-            throw new RuntimeException("Snapshot file does not exist: {$snapshotPath}");
+        if (! $this->snapshotExists($snapshotId)) {
+            throw new RuntimeException('Snapshot has expired or does not exist. Run the report again.');
         }
 
         $page = max(1, $page);
+        $perPage = max(1, $perPage);
         $offset = ($page - 1) * $perPage;
         $limit = $perPage + 1;
 
@@ -93,7 +97,7 @@ class SnapshotManager
     public function getMetadata(string $snapshotId): ?array
     {
         $snapshotPath = $this->getSnapshotPath($snapshotId);
-        if (! file_exists($snapshotPath)) {
+        if (! $this->snapshotExists($snapshotId)) {
             return null;
         }
 
@@ -129,14 +133,15 @@ class SnapshotManager
      */
     public function cleanExpiredSnapshots(?int $ttlMinutes = null): int
     {
-        $ttl = $ttlMinutes ?? (int) config('smartreport.snapshot_ttl_minutes', 30);
-        $threshold = time() - ($ttl * 60);
+        $ttl = max(1, $ttlMinutes ?? (int) config('smartreport.snapshot_ttl_minutes', 30));
+        $threshold = now()->timestamp - ($ttl * 60);
         $dir = $this->getSnapshotDirectory();
         $files = glob($dir.DIRECTORY_SEPARATOR.'*.duckdb') ?: [];
 
         $deletedCount = 0;
         foreach ($files as $file) {
-            if (filemtime($file) < $threshold) {
+            clearstatcache(true, $file);
+            if (is_file($file) && filemtime($file) <= $threshold) {
                 if (@unlink($file)) {
                     $deletedCount++;
                 }

@@ -5,6 +5,7 @@ namespace App\Services\Export;
 use App\Services\DuckDb\DuckDbSourceAdapter;
 use App\Services\DuckDb\SnapshotManager;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Str;
 use InvalidArgumentException;
 use RuntimeException;
 use ZipArchive;
@@ -31,9 +32,9 @@ class DuckDbExporter
 
         $slice = $limit !== null ? sprintf(' LIMIT %d OFFSET %d', $limit, $offset) : '';
         $sql = sprintf(
-            "LOAD excel;\nCOPY (SELECT * EXCLUDE (__row_id) FROM report_result ORDER BY __row_id%s) TO '%s' WITH (FORMAT xlsx, HEADER true, SHEET 'SmartReport');",
+            "LOAD excel;\nCOPY (SELECT * EXCLUDE (__row_id) FROM report_result ORDER BY __row_id%s) TO %s WITH (FORMAT xlsx, HEADER true, SHEET 'SmartReport');",
             $slice,
-            $targetPath
+            $this->adapter->quoteString($targetPath)
         );
 
         $this->adapter->runQuery($sql, $snapshotPath, false, 60);
@@ -50,26 +51,40 @@ class DuckDbExporter
         $this->prepareDirectoryForFile($targetPath);
 
         $snapshotPath = $this->snapshotManager->getSnapshotPath($snapshotId);
-        if (file_exists($targetPath)) {
-            @unlink($targetPath);
-        }
-
+        $rawPath = $targetPath.'.'.Str::uuid().'.raw';
+        $bomPath = $rawPath.'.bom';
         $slice = $limit !== null ? sprintf(' LIMIT %d OFFSET %d', $limit, $offset) : '';
         $sql = sprintf(
-            "COPY (SELECT * EXCLUDE (__row_id) FROM report_result ORDER BY __row_id%s) TO '%s' WITH (FORMAT csv, HEADER true, DELIMITER ',');",
+            "COPY (SELECT * EXCLUDE (__row_id) FROM report_result ORDER BY __row_id%s) TO %s WITH (FORMAT csv, HEADER true, DELIMITER ',');",
             $slice,
-            $targetPath
+            $this->adapter->quoteString($rawPath)
         );
 
-        $this->adapter->runQuery($sql, $snapshotPath, false, 60);
+        try {
+            $this->adapter->runQuery($sql, $snapshotPath, false, 60);
+            $input = fopen($rawPath, 'rb');
+            $output = fopen($bomPath, 'xb');
+            try {
+                if ($input === false || $output === false || fwrite($output, "\xEF\xBB\xBF") !== 3 || stream_copy_to_stream($input, $output) === false) {
+                    throw new RuntimeException('Failed to write UTF-8 CSV export.');
+                }
+            } finally {
+                if (is_resource($input)) {
+                    fclose($input);
+                }
+                if (is_resource($output)) {
+                    fclose($output);
+                }
+            }
 
-        // Prepend UTF-8 BOM so Excel opens Vietnamese characters correctly
-        $content = (string) file_get_contents($targetPath);
-        if (! str_starts_with($content, "\xEF\xBB\xBF")) {
-            file_put_contents($targetPath, "\xEF\xBB\xBF".$content);
+            if (! rename($bomPath, $targetPath)) {
+                throw new RuntimeException('Failed to finalize CSV export.');
+            }
+
+            return $targetPath;
+        } finally {
+            File::delete([$rawPath, $bomPath]);
         }
-
-        return $targetPath;
     }
 
     /**

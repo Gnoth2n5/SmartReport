@@ -87,3 +87,9 @@ php artisan test --filter=ReportRunnerAndSqlExportTest
 # Chạy bộ kiểm thử E2E trên trình duyệt (Playwright)
 npx playwright test
 ```
+
+## Dọn snapshot hết hạn
+
+Ứng dụng từ chối phân trang/xuất snapshot hết hạn. Scheduler dọn file cũ mỗi 5 phút.
+Chạy scheduler trong môi trường phát triển bằng `php artisan schedule:work --no-interaction`,
+hoặc thêm `php artisan schedule:run --no-interaction` vào cron mỗi phút khi triển khai.
