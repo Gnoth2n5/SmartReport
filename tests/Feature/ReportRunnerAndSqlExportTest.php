@@ -207,7 +207,8 @@ class ReportRunnerAndSqlExportTest extends TestCase
                 $superAdminUrls[] = $item->getUrl();
             }
         }
-        $this->assertContains(url('/admin/sql-export'), $superAdminUrls);
+        $this->assertNotContains(url('/admin/sql-export'), $superAdminUrls);
+        $this->get('/admin/custom-views')->assertSuccessful()->assertSee('Công cụ SQL');
     }
 
     public function test_report_runner_single_or_union_source_switching(): void

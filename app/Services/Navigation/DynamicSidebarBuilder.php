@@ -2,6 +2,8 @@
 
 namespace App\Services\Navigation;
 
+use App\Filament\Pages\Dashboard;
+use App\Filament\Pages\SqlExportPage;
 use App\Filament\Resources\SitTemplateResource;
 use App\Models\CustomView;
 use App\Models\MenuGroup;
@@ -12,7 +14,6 @@ use Filament\Facades\Filament;
 use Filament\Navigation\NavigationBuilder;
 use Filament\Navigation\NavigationGroup;
 use Filament\Navigation\NavigationItem;
-use Filament\Pages\Dashboard;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Schema;
 
@@ -35,7 +36,9 @@ class DynamicSidebarBuilder
         $user = User::current();
 
         // 2. Add Dashboard item
-        $builder->items(Dashboard::getNavigationItems());
+        if (Dashboard::shouldRegisterNavigation()) {
+            $builder->items(Dashboard::getNavigationItems());
+        }
 
         if (! $user) {
             return $builder;
@@ -122,13 +125,13 @@ class DynamicSidebarBuilder
         $adminItems = [];
 
         foreach ($panel->getResources() as $resource) {
-            if ($resource::canAccess()) {
+            if ($resource::shouldRegisterNavigation() && $resource::canAccess()) {
                 $adminItems = array_merge($adminItems, $resource::getNavigationItems());
             }
         }
 
         foreach ($panel->getPages() as $page) {
-            if ($page === Dashboard::class || ! $page::shouldRegisterNavigation()) {
+            if ($page === Dashboard::class || ($page === SqlExportPage::class && User::current()?->isSuperAdmin()) || ! $page::shouldRegisterNavigation()) {
                 continue;
             }
 

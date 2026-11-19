@@ -68,7 +68,7 @@ class FilamentAdminResourcesTest extends TestCase
         $this->get('/admin/menu-groups')->assertRedirect('/admin/login');
         $this->get('/admin/role-permissions')->assertRedirect('/admin/login');
 
-        $this->actingAs($this->adminUser)->get('/admin')->assertSuccessful();
+        $this->actingAs($this->adminUser)->get('/admin')->assertRedirect('/admin/custom-views');
     }
 
     public function test_non_super_admin_cannot_access_administrative_resources(): void
@@ -413,7 +413,7 @@ class FilamentAdminResourcesTest extends TestCase
         $this->assertContains('Báo Cáo Điều Hành & Nhân Sự', $groupLabels);
 
         // HTTP assertion
-        $this->get('/admin')
+        $this->get('/admin/custom-views')
             ->assertSuccessful()
             ->assertSee('Sản Xuất & Vận Hành')
             ->assertSee('Xuất Nhập Khẩu & Hợp Đồng')

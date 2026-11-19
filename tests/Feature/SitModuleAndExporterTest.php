@@ -80,7 +80,7 @@ class SitModuleAndExporterTest extends TestCase
         ]);
 
         // Verify individual SIT templates are NOT pushed onto the Sidebar
-        $this->get('/admin')
+        $this->get('/admin/custom-views')
             ->assertSuccessful()
             ->assertDontSee('/admin/sit-tests/sit-custom-warehouse');
 

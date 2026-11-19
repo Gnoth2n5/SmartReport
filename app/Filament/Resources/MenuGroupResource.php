@@ -33,6 +33,8 @@ class MenuGroupResource extends Resource
 
     protected static ?int $navigationSort = 2;
 
+    protected static bool $shouldRegisterNavigation = false;
+
     protected static ?string $modelLabel = 'Nhóm menu';
 
     protected static ?string $pluralModelLabel = 'Nhóm menu';
@@ -63,7 +65,8 @@ class MenuGroupResource extends Resource
                     ]),
                 Section::make('Nâng cao')->collapsed()->schema([
                     TextInput::make('group_code')
-                        ->label('Mã nhóm Menu')
+                        ->label('Mã kỹ thuật (tự sinh)')
+                        ->disabled(fn (string $operation): bool => $operation === 'edit')
                         ->unique(ignoreRecord: true)
                         ->maxLength(255)
                         ->placeholder('vd: manufacturing, logistics'),

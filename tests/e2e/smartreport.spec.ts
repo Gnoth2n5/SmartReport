@@ -69,18 +69,6 @@ test.describe.serial('SmartReport E2E Verification Suite', () => {
     test.beforeAll(() => {
         fs.mkdirSync(SCREENSHOTS_DIR, { recursive: true });
         tempDownloadDir = fs.mkdtempSync(path.join(os.tmpdir(), 'smartreport-e2e-'));
-
-        // Keep Scenario 2 idempotent across repeated E2E runs
-        execFileSync(
-            'php',
-            [
-                'artisan',
-                'tinker',
-                '--no-interaction',
-                '--execute=\\App\\Models\\CustomView::where("view_code", "e2e-dynamic-orders")->delete();',
-            ],
-            { cwd: PROJECT_ROOT, stdio: 'pipe' }
-        );
     });
 
     test.afterAll(() => {
@@ -137,13 +125,33 @@ test.describe.serial('SmartReport E2E Verification Suite', () => {
                 .sort()
         );
         expect(optionValues).toEqual(['oracle', 'pgsql', 'sqlsrv']);
+        await expect(driverSelect).toHaveValue('pgsql');
+        const database = page.locator('input[id$=".database_name"]');
+        const service = page.locator('input[id$=".service_name"]');
+        await expect(database).toBeVisible();
+        await expect(service).toBeHidden();
+        await page.getByRole('heading', { name: 'Nâng cao', exact: true }).click();
+        const port = page.locator('input[id$=".port"]');
+        const schema = page.locator('input[id$=".default_schema"]');
+        await expect(port).toHaveValue('5432');
+        await driverSelect.selectOption('oracle');
+        await expect(service).toBeVisible();
+        await expect(database).toBeHidden();
+        await expect(port).toHaveValue('1521');
+        await expect(schema).toHaveValue('APP');
+        await port.fill('1522');
+        await schema.fill('CUSTOM');
+        await driverSelect.selectOption('sqlsrv');
+        await expect(database).toBeVisible();
+        await expect(port).toHaveValue('1522');
+        await expect(schema).toHaveValue('CUSTOM');
+        await page.screenshot({ path: test.info().outputPath('source-driver-form.png'), fullPage: true });
     });
 
     test('E2E 2: Custom View Builder auto-detects @params, previews 10 rows via DuckDB, and updates sidebar', async ({ page }) => {
         await loginAsAdmin(page);
         await page.goto('/admin/custom-views/create');
 
-        await page.locator('input[id*="view_code"]').fill('e2e-dynamic-orders');
         await page.locator('input[id*="view_name"]').fill('E2E Dynamic Orders');
 
         await selectFilamentOption(page, 'menu_group_code', 'Sản xuất & Vận hành');
@@ -163,14 +171,23 @@ test.describe.serial('SmartReport E2E Verification Suite', () => {
         );
         await sqlTextarea.blur();
 
-        // Trigger Auto-detect @params
-        await page.getByRole('button', { name: 'Tự động nhận diện @tham số' }).first().click();
-        await waitForFilamentNotification(page, 'Đã nhận diện tham số');
-
         const filterInputs = page.locator('input[id*="filters"][id*="name"]');
         await expect(filterInputs).toHaveCount(2);
         await expect(filterInputs.nth(0)).toHaveValue('Plant');
         await expect(filterInputs.nth(1)).toHaveValue('StartDate');
+        await expect(filterInputs.nth(0)).toHaveJSProperty('readOnly', true);
+        const plantLabel = page.locator('input[id*="filters"][id*="label"]').first();
+        await plantLabel.fill('Nhà máy');
+        await sqlTextarea.fill((await sqlTextarea.inputValue()).replace('plant = @Plant', 'plant = @plant'));
+        await sqlTextarea.blur();
+        await expect(filterInputs).toHaveCount(2);
+        await expect(plantLabel).toHaveValue('Nhà máy');
+
+        const syncButton = page.getByRole('button', { name: 'Tự động nhận diện @tham số' });
+        await expect(syncButton).toHaveCount(1);
+        await syncButton.click();
+        await waitForFilamentNotification(page, 'Đã nhận diện tham số');
+        await expect(plantLabel).toHaveValue('Nhà máy');
 
         // Trigger 10-row Preview modal via DuckDB
         await page.getByRole('button', { name: 'Chạy thử SQL (Test 10 dòng)' }).first().click();
@@ -198,7 +215,16 @@ test.describe.serial('SmartReport E2E Verification Suite', () => {
 
         // Confirm sidebar navigation updated dynamically
         await page.goto('/admin');
+        await expect(page).toHaveURL(/\/admin\/custom-views$/);
         await expect(page.locator('nav.fi-sidebar-nav')).toContainText('E2E Dynamic Orders');
+        const sidebar = page.locator('nav.fi-sidebar-nav');
+        await expect(sidebar.locator('a[href$="/menu-groups"]')).toHaveCount(0);
+        await expect(sidebar.locator('a[href$="/sql-export"]')).toHaveCount(0);
+        await expect(sidebar.locator('a[href$="/admin"]')).toHaveCount(0);
+        await expect(page.getByRole('link', { name: 'Nhóm báo cáo', exact: true })).toBeVisible();
+        await expect(page.getByRole('link', { name: 'Công cụ SQL', exact: true })).toBeVisible();
+        await page.goto('/admin/reports/e2e_dynamic_orders');
+        await expect(page.locator('table.fi-ta-table tbody tr')).toHaveCount(10);
     });
 
     test('E2E 3: Verify all 4 Multi-DB SELECT patterns and 3-tab inspector on ReportRunnerPage', async ({ page }) => {
@@ -362,5 +388,29 @@ test.describe.serial('SmartReport E2E Verification Suite', () => {
         ).trim();
         const zipEntries = zipListOut.split(/\r?\n/).filter((e) => e.endsWith('.csv'));
         expect(zipEntries.length).toBeGreaterThanOrEqual(3);
+    });
+
+    test('E2E 5: SIT custom field schema drives default steps and the runner', async ({ page }) => {
+        await loginAsAdmin(page);
+        await page.goto('/admin/sit-templates/create');
+        await page.locator('input[id$=".template_name"]').fill('E2E Warehouse SIT');
+        await expect(page.locator('input[id*="template_code"]')).toBeHidden();
+        await page.getByRole('heading', { name: 'Trường tùy biến', exact: true }).click();
+        await page.locator('input[id*="step_fields"][id$=".key"]').first().fill('warehouse');
+        const fieldLabel = page.locator('input[id*="step_fields"][id$=".label"]').first();
+        await fieldLabel.fill('Mã kho');
+        await fieldLabel.blur();
+        await page.locator('select[id*="step_fields"][id$=".type"]').first().selectOption('text');
+        await page.locator('input[id*="default_steps"][id$=".title"]').first().fill('Kiểm tra kho');
+        const warehouse = page.locator('input[id*="default_steps"][id$=".fields.warehouse"]');
+        await expect(warehouse).toBeVisible();
+        await expect(warehouse).toHaveAccessibleName('Mã kho');
+        await warehouse.fill('WH-01');
+        await page.screenshot({ path: test.info().outputPath('sit-shared-field-editor.png'), fullPage: true });
+        await page.getByRole('button', { name: 'Create', exact: true }).click();
+        await page.waitForURL(/\/admin\/sit-templates(\/[^/]+\/edit)?$/, { timeout: 30_000 });
+        await page.goto('/admin/sit-tests/e2e_warehouse_sit');
+        await expect(page.locator('.sit-field').filter({ hasText: 'Mã kho' }).locator('input')).toHaveValue('WH-01');
+        await page.screenshot({ path: test.info().outputPath('sit-shared-field-runner.png'), fullPage: true });
     });
 });
