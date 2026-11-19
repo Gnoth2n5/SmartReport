@@ -29,6 +29,7 @@ class Cluster1EnvironmentAndSeedTest extends TestCase
         $this->assertStringStartsWith(sys_get_temp_dir().'/smartreport-tests-', storage_path());
         $this->assertSame(storage_path('app/snapshots'), config('smartreport.snapshot_dir'));
         $this->assertSame(storage_path('app/public'), config('filesystems.disks.public.root'));
+        $this->assertSame(':memory:', config('database.connections.sqlite.database'));
     }
 
     public function test_smartreport_config_and_duckdb_binary_are_valid(): void

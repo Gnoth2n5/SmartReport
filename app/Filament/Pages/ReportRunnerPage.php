@@ -39,6 +39,10 @@ class ReportRunnerPage extends Page
     #[Locked]
     public ?string $snapshotId = null;
 
+    /** @var list<string>|null */
+    #[Locked]
+    public ?array $snapshotSourceCodes = null;
+
     #[Locked]
     public int $currentPage = 1;
 
@@ -248,6 +252,9 @@ class ReportRunnerPage extends Page
             }
 
             $this->snapshotId = $newSnapshotId;
+            $this->snapshotSourceCodes = $view->isSingleOrUnion()
+                ? $sourcesToUse
+                : $this->sanitizeScalarList(array_column($view->source_queries ?? [], 'source_code'));
             $meta = $snapshotManager->getMetadata($newSnapshotId);
             $this->snapshotCreatedAt = isset($meta['created_at']) ? (string) $meta['created_at'] : now('UTC')->toDateTimeString();
 
@@ -273,7 +280,7 @@ class ReportRunnerPage extends Page
 
     public function loadPage(int $page): void
     {
-        $this->authorizeViewAccess($this->resolveCustomView());
+        $this->authorizeViewAccess($this->resolveCustomView(), checkSnapshotSources: true);
 
         /** @var SnapshotManager $snapshotManager */
         $snapshotManager = app(SnapshotManager::class);
@@ -477,7 +484,7 @@ class ReportRunnerPage extends Page
     protected function exportSnapshot(string $format): ?BinaryFileResponse
     {
         $view = $this->resolveCustomView();
-        $this->authorizeViewAccess($view);
+        $this->authorizeViewAccess($view, checkSnapshotSources: true);
 
         /** @var SnapshotManager $snapshotManager */
         $snapshotManager = app(SnapshotManager::class);
@@ -546,7 +553,7 @@ class ReportRunnerPage extends Page
         return $this->cachedView;
     }
 
-    protected function authorizeViewAccess(CustomView $view): void
+    protected function authorizeViewAccess(CustomView $view, bool $checkSnapshotSources = false): void
     {
         $user = User::current() ?? abort(403);
 
@@ -562,6 +569,11 @@ class ReportRunnerPage extends Page
         if ($view->isFederatedJoin()) {
             $requiredSources = array_values(array_unique(array_column($view->source_queries ?? [], 'source_code')));
             abort_unless(count($this->filterSourcesByRolePermissions($requiredSources)) === count($requiredSources), 403);
+        }
+
+        if ($checkSnapshotSources && $this->snapshotId !== null) {
+            abort_unless($this->snapshotSourceCodes !== null, 403);
+            abort_unless(count($this->filterSourcesByRolePermissions($this->snapshotSourceCodes)) === count($this->snapshotSourceCodes), 403);
         }
     }
 
@@ -603,6 +615,7 @@ class ReportRunnerPage extends Page
     protected function resetSnapshotState(): void
     {
         $this->snapshotId = null;
+        $this->snapshotSourceCodes = null;
         $this->columns = [];
         $this->rows = [];
         $this->totalRows = 0;

@@ -14,6 +14,7 @@ Object.assign(process.env, {
     DB_CONNECTION: 'sqlite',
     DB_DATABASE: path.join(storageRoot, 'database.sqlite'),
     LARAVEL_STORAGE_PATH: storageRoot,
+    APP_CONFIG_CACHE: path.join(storageRoot, 'config.php'),
     SMARTREPORT_SNAPSHOT_DIR: path.join(storageRoot, 'app', 'snapshots'),
     DUCKDB_BINARY: path.resolve('storage/bin/duckdb'),
     SESSION_DRIVER: 'file',

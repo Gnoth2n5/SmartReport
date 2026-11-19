@@ -164,6 +164,12 @@ class SqlSafetyValidator
         }
 
         // 5. Block filesystem and dangerous functions (read_csv, read_parquet, parquet_scan, glob, duckdb_secrets, etc.)
+        if (preg_match('/\b(?:(?:mssql|postgres|oracle)_[a-zA-Z0-9_]+|query(?:_table)?)\b\s*"?\s*\(/i', $withoutLiterals)) {
+            $violations[] = 'Native passthrough and dynamic SQL functions are forbidden.';
+
+            return false;
+        }
+
         foreach (self::FORBIDDEN_FUNCTIONS as $fn) {
             $pattern = '/\b'.preg_quote($fn, '/').'\b/i';
             if (preg_match($pattern, $withoutLiterals)) {

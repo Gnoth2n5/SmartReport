@@ -14,6 +14,7 @@ abstract class TestCase extends BaseTestCase
     {
         $this->testStoragePath ??= sys_get_temp_dir().'/smartreport-tests-'.bin2hex(random_bytes(12));
         $_ENV['LARAVEL_STORAGE_PATH'] = $_SERVER['LARAVEL_STORAGE_PATH'] = $this->testStoragePath;
+        $_ENV['APP_CONFIG_CACHE'] = $_SERVER['APP_CONFIG_CACHE'] = $this->testStoragePath.'/config.php';
         $_ENV['SMARTREPORT_SNAPSHOT_DIR'] = $this->testStoragePath.'/app/snapshots';
         $_ENV['DUCKDB_BINARY'] = dirname(__DIR__).'/storage/bin/duckdb';
 
