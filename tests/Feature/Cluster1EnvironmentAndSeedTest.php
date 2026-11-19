@@ -81,8 +81,6 @@ class Cluster1EnvironmentAndSeedTest extends TestCase
         // 2. Menu Groups
         $this->assertGreaterThanOrEqual(3, MenuGroup::count());
         $mfgGroup = MenuGroup::where('group_code', 'manufacturing')->firstOrFail();
-        $this->assertIsArray($mfgGroup->roles);
-        $this->assertContains('super_admin', $mfgGroup->roles);
         $this->assertGreaterThan(0, $mfgGroup->customViews()->count());
 
         // 3. Role Permissions
@@ -90,15 +88,14 @@ class Cluster1EnvironmentAndSeedTest extends TestCase
         $superAdmin = RolePermission::where('role_code', 'super_admin')->firstOrFail();
         $this->assertTrue($superAdmin->is_system);
         $this->assertTrue($superAdmin->allowsView('any-view'));
-        $this->assertTrue($superAdmin->allowsGroup('any-group'));
+        $this->assertTrue($superAdmin->allowsSitTemplate('any-template'));
         $this->assertTrue($superAdmin->allowsSource('any-source'));
 
         $viewer = RolePermission::where('role_code', 'report_viewer')->firstOrFail();
         $this->assertFalse($viewer->is_system);
         $this->assertTrue($viewer->allowsView('pg-multi-plant-contracts'));
         $this->assertFalse($viewer->allowsView('join-oracle-mssql-productivity'));
-        $this->assertTrue($viewer->allowsGroup('logistics'));
-        $this->assertFalse($viewer->allowsGroup('executive'));
+        $this->assertTrue($viewer->allowsSitTemplate('sit-erp-order-sync'));
 
         // 4. Custom Views
         $this->assertGreaterThanOrEqual(5, CustomView::count());

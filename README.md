@@ -100,3 +100,10 @@ hoặc thêm `php artisan schedule:run --no-interaction` vào cron mỗi phút k
 qua đợt test có quyền truy cập. Khi cập nhật bản cũ, chạy
 `php artisan migrate --no-interaction` rồi `php artisan smartreport:secure-sit-evidence --no-interaction`
 để chuyển ảnh công khai sang vùng riêng; đường dẫn đã lưu và ảnh dùng chung khi retest được giữ nguyên.
+
+## Phân quyền nội dung
+
+Quyền Báo cáo, Kịch bản SIT và giới hạn nguồn DB được quản lý tại Vai trò & Phân quyền.
+Form báo cáo/SIT chỉ hiển thị tóm tắt và liên kết quản lý quyền; nhóm menu chỉ phân loại.
+Migration `centralize_content_permissions` chuyển quyền cũ sang vai trò và giữ giới hạn nguồn.
+Đây là chuyển đổi dữ liệu một chiều: sao lưu SQLite trước khi triển khai nếu cần quay lại phiên bản cũ.

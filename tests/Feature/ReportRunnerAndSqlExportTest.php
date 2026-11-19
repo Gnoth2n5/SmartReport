@@ -276,7 +276,6 @@ class ReportRunnerAndSqlExportTest extends TestCase
                     ],
                 ],
             ],
-            'roles' => ['super_admin'],
             'version' => '1.0.0',
             'is_active' => true,
         ]);
@@ -685,7 +684,6 @@ class ReportRunnerAndSqlExportTest extends TestCase
                 ],
             ],
             'sql_text' => 'SELECT contract_no FROM c ORDER BY contract_no; -- final comment',
-            'roles' => ['super_admin'],
             'version' => '1.0.0',
             'is_active' => true,
         ]);
@@ -773,11 +771,11 @@ class ReportRunnerAndSqlExportTest extends TestCase
                     'type' => 'number',
                 ],
             ],
-            'roles' => ['report_viewer'],
             'version' => '1.0.0',
             'is_active' => true,
         ]);
 
+        RolePermission::where('role_code', 'report_viewer')->update(['allowed_views' => ['open-sources-viewer-report']]);
         $this->actingAs($this->viewerUser);
 
         $component = Livewire::test(ReportRunnerPage::class, ['viewCode' => 'open-sources-viewer-report'])

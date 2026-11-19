@@ -78,7 +78,7 @@ class DynamicSidebarBuilder
             ->get();
 
         $allViews = CustomView::query()
-            ->select(['id', 'view_code', 'view_name', 'menu_group_code', 'roles'])
+            ->select(['id', 'view_code', 'view_name', 'menu_group_code'])
             ->where('is_active', true)
             ->get();
 
@@ -89,10 +89,6 @@ class DynamicSidebarBuilder
         $navigationGroups = [];
 
         foreach ($groups as $group) {
-            if (! $this->canUserAccessGroup($user, $group, $userPermissions)) {
-                continue;
-            }
-
             $groupViews = $allViews->where('menu_group_code', $group->group_code);
             $items = [];
 
@@ -156,30 +152,6 @@ class DynamicSidebarBuilder
     }
 
     /**
-     * Check if user has permission to access a menu group.
-     *
-     * @param  Collection<int, RolePermission>  $permissions
-     */
-    public function canUserAccessGroup(User $user, MenuGroup $group, Collection $permissions): bool
-    {
-        if ($user->isSuperAdmin()) {
-            return true;
-        }
-
-        if (! empty($group->roles) && $user->hasAnyRole($group->roles)) {
-            return true;
-        }
-
-        foreach ($permissions as $permission) {
-            if ($permission->allowsGroup($group->group_code)) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    /**
      * Check if user has permission to access a custom view.
      *
      * @param  Collection<int, RolePermission>  $permissions
@@ -187,10 +159,6 @@ class DynamicSidebarBuilder
     public function canUserAccessView(User $user, CustomView $view, Collection $permissions): bool
     {
         if ($user->isSuperAdmin()) {
-            return true;
-        }
-
-        if (! empty($view->roles) && $user->hasAnyRole($view->roles)) {
             return true;
         }
 
@@ -214,12 +182,8 @@ class DynamicSidebarBuilder
             return true;
         }
 
-        if (! empty($template->roles) && $user->hasAnyRole($template->roles)) {
-            return true;
-        }
-
         foreach ($permissions as $permission) {
-            if ($permission->allowsView($template->template_code)) {
+            if ($permission->allowsSitTemplate($template->template_code)) {
                 return true;
             }
         }

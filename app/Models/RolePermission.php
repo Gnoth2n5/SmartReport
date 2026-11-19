@@ -26,7 +26,7 @@ class RolePermission extends Model
         'role_name',
         'description',
         'is_system',
-        'allowed_groups',
+        'allowed_sit_templates',
         'allowed_views',
         'allowed_sources',
     ];
@@ -40,7 +40,7 @@ class RolePermission extends Model
     {
         return [
             'is_system' => 'boolean',
-            'allowed_groups' => 'array',
+            'allowed_sit_templates' => 'array',
             'allowed_views' => 'array',
             'allowed_sources' => 'array',
         ];
@@ -68,14 +68,11 @@ class RolePermission extends Model
         return in_array('*', $views, true) || in_array($viewCode, $views, true);
     }
 
-    /**
-     * Check if this role grants permission for a given menu group.
-     */
-    public function allowsGroup(string $groupCode): bool
+    public function allowsSitTemplate(string $templateCode): bool
     {
-        $groups = $this->allowed_groups ?? [];
+        $templates = $this->allowed_sit_templates ?? [];
 
-        return in_array('*', $groups, true) || in_array($groupCode, $groups, true);
+        return in_array('*', $templates, true) || in_array($templateCode, $templates, true);
     }
 
     /**

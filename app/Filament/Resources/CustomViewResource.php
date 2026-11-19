@@ -20,14 +20,15 @@ use Filament\Actions\EditAction;
 use Filament\Forms\Components\KeyValue;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
-use Filament\Forms\Components\TagsInput;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
+use Filament\Schemas\Components\Actions;
 use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Section;
+use Filament\Schemas\Components\Text;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\IconColumn;
@@ -238,14 +239,23 @@ class CustomViewResource extends Resource
                     ]),
 
                 // 5. RBAC Roles Assignment
-                Section::make('Phân quyền truy cập (RBAC)')
-                    ->description('Chỉ định các vai trò được phép xem báo cáo này')
+                Section::make('Quyền truy cập')
+                    ->description('Cấp và thu hồi quyền tại màn hình Phân quyền. Super admin luôn có quyền.')
                     ->schema([
-                        TagsInput::make('roles')
-                            ->label('Vai trò được phép')
-                            ->suggestions(fn (): array => RolePermission::pluck('role_code')->toArray())
-                            ->placeholder('Thêm vai trò (vd: super_admin, report_viewer)')
-                            ->helperText('Để trống nếu chỉ cho phép Super Admin.'),
+                        Text::make(function (?Model $record): string {
+                            if ($record === null) {
+                                return 'Lưu nội dung trước khi cấp quyền cho các vai trò khác.';
+                            }
+                            $names = RolePermission::query()
+                                ->whereJsonContains('allowed_views', '*')
+                                ->orWhereJsonContains('allowed_views', $record->view_code)
+                                ->pluck('role_name')->implode(', ');
+
+                            return $names !== '' ? 'Vai trò được cấp quyền: '.$names : 'Chưa cấp quyền cho vai trò khác.';
+                        }),
+                        Actions::make([
+                            Action::make('manage_permissions')->label('Quản lý quyền')->url(RolePermissionResource::getUrl())->openUrlInNewTab(),
+                        ]),
                     ]),
             ]);
     }

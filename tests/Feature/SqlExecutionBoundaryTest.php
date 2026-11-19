@@ -27,9 +27,9 @@ class SqlExecutionBoundaryTest extends TestCase
             'view_code' => 'restricted-hr', 'view_name' => 'Restricted HR',
             'execution_mode' => 'federated_join', 'sql_text' => 'SELECT * FROM hr_rows',
             'source_queries' => [['source_code' => 'oracle_hr', 'alias' => 'hr_rows', 'sql_text' => 'SELECT * FROM APP.EMPLOYEES']],
-            'roles' => ['report_viewer'], 'is_active' => true,
+            'is_active' => true,
         ]);
-        RolePermission::where('role_code', 'report_viewer')->update(['allowed_sources' => ['pg_north']]);
+        RolePermission::where('role_code', 'report_viewer')->update(['allowed_sources' => ['pg_north'], 'allowed_views' => [$view->view_code]]);
         $this->actingAs(User::factory()->create(['roles' => ['report_viewer']]));
         $this->mock(DuckDbReportEngine::class)->shouldNotReceive('executeAndCreateSnapshot');
 

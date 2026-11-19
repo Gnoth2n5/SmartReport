@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Filament\Pages\SitRunnerPage;
+use App\Models\RolePermission;
 use App\Models\SitTemplate;
 use App\Models\SitTestRun;
 use App\Models\User;
@@ -54,7 +55,7 @@ class SitSecurityAndConcurrencyTest extends TestCase
         $this->actingAs(User::factory()->create(['roles' => ['report_viewer']]));
         $page = Livewire::test(SitRunnerPage::class, ['templateCode' => $template->template_code]);
         $id = $page->get('loadedRunId');
-        $template->update(['roles' => ['super_admin']]);
+        RolePermission::where('role_code', 'report_viewer')->update(['allowed_sit_templates' => []]);
         $page->set('summaryNotes', 'WRITE_AFTER_REVOKE')->assertForbidden();
 
         $this->assertSame('', SitTestRun::findOrFail($id)->summary_notes);
@@ -135,6 +136,12 @@ class SitSecurityAndConcurrencyTest extends TestCase
 
     private function template(string $code, array $roles = ['super_admin']): SitTemplate
     {
-        return SitTemplate::create(['template_code' => $code, 'template_name' => $code, 'step_fields' => SitTemplate::defaultStepFields(), 'roles' => $roles, 'is_active' => true]);
+        $template = SitTemplate::create(['template_code' => $code, 'template_name' => $code, 'step_fields' => SitTemplate::defaultStepFields(), 'is_active' => true]);
+        foreach ($roles as $roleCode) {
+            $role = RolePermission::firstOrCreate(['role_code' => $roleCode], ['role_name' => $roleCode]);
+            $role->update(['allowed_sit_templates' => array_unique([...($role->allowed_sit_templates ?? []), $code])]);
+        }
+
+        return $template;
     }
 }

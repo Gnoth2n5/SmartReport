@@ -41,7 +41,6 @@ class CustomView extends Model
         'source_queries',
         'sql_text',
         'filters',
-        'roles',
         'description',
         'version',
         'is_active',
@@ -59,7 +58,6 @@ class CustomView extends Model
             'default_sources' => 'array',
             'source_queries' => 'array',
             'filters' => 'array',
-            'roles' => 'array',
             'is_active' => 'boolean',
         ];
     }

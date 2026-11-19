@@ -71,7 +71,6 @@ class SitModuleAndExporterTest extends TestCase
                         'expected' => 'Tồn kho tăng 200',
                     ],
                 ],
-                'roles' => ['super_admin'],
             ])
             ->call('create')
             ->assertHasNoFormErrors();

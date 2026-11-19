@@ -23,7 +23,6 @@ class SitTemplate extends Model
         'version',
         'step_fields',
         'default_steps',
-        'roles',
         'is_active',
     ];
 
@@ -32,7 +31,6 @@ class SitTemplate extends Model
         return [
             'step_fields' => 'array',
             'default_steps' => 'array',
-            'roles' => 'array',
             'is_active' => 'boolean',
         ];
     }
@@ -43,18 +41,13 @@ class SitTemplate extends Model
             return $query;
         }
 
-        $views = RolePermission::whereIn('role_code', $user->roles ?? [])->pluck('allowed_views')->flatten()->all();
+        $views = RolePermission::whereIn('role_code', $user->roles ?? [])->pluck('allowed_sit_templates')->flatten()->all();
         $query->where('is_active', true);
         if (in_array('*', $views, true)) {
             return $query;
         }
 
-        return $query->where(function (Builder $scope) use ($user, $views): void {
-            $scope->whereIn('template_code', $views);
-            foreach ($user->roles ?? [] as $role) {
-                $scope->orWhereJsonContains('roles', $role);
-            }
-        });
+        return $query->whereIn('template_code', $views);
     }
 
     /**

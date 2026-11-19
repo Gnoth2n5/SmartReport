@@ -114,7 +114,7 @@ class SmartReportSeeder extends Seeder
                 'title' => 'Sản Xuất & Vận Hành',
                 'icon' => 'heroicon-o-wrench-screwdriver',
                 'sort_order' => 10,
-                'roles' => ['super_admin', 'report_viewer'],
+
                 'is_active' => true,
             ],
             [
@@ -122,7 +122,7 @@ class SmartReportSeeder extends Seeder
                 'title' => 'Xuất Nhập Khẩu & Hợp Đồng',
                 'icon' => 'heroicon-o-truck',
                 'sort_order' => 20,
-                'roles' => ['super_admin', 'report_viewer'],
+
                 'is_active' => true,
             ],
             [
@@ -130,7 +130,7 @@ class SmartReportSeeder extends Seeder
                 'title' => 'Báo Cáo Điều Hành & Nhân Sự',
                 'icon' => 'heroicon-o-chart-bar-square',
                 'sort_order' => 30,
-                'roles' => ['super_admin'],
+
                 'is_active' => true,
             ],
         ];
@@ -148,8 +148,9 @@ class SmartReportSeeder extends Seeder
                 'role_name' => 'Quản trị viên cấp cao',
                 'description' => 'Toàn quyền quản trị hệ thống và xem tất cả báo cáo',
                 'is_system' => true,
-                'allowed_groups' => ['*'],
+
                 'allowed_views' => ['*'],
+                'allowed_sit_templates' => ['*'],
                 'allowed_sources' => ['*'],
             ],
             [
@@ -157,8 +158,9 @@ class SmartReportSeeder extends Seeder
                 'role_name' => 'Nhân viên xem báo cáo',
                 'description' => 'Xem các báo cáo sản xuất và logistics cơ bản',
                 'is_system' => false,
-                'allowed_groups' => ['manufacturing', 'logistics'],
+
                 'allowed_views' => ['pg-multi-plant-contracts', 'mssql-production-orders', 'oracle-hr-directory'],
+                'allowed_sit_templates' => ['sit-erp-order-sync'],
                 'allowed_sources' => ['pg_north', 'pg_south', 'mssql_erp', 'oracle_hr'],
             ],
         ];
@@ -204,7 +206,7 @@ class SmartReportSeeder extends Seeder
                         'type' => 'date',
                     ],
                 ],
-                'roles' => ['super_admin', 'report_viewer'],
+
                 'description' => 'Tra cứu danh sách hợp đồng may mặc và vải xuất khẩu, hỗ trợ gộp 2 chi nhánh Bắc và Nam (UNION ALL).',
                 'version' => '1.0.0',
                 'is_active' => true,
@@ -240,7 +242,7 @@ class SmartReportSeeder extends Seeder
                         'type' => 'date',
                     ],
                 ],
-                'roles' => ['super_admin', 'report_viewer'],
+
                 'description' => 'Theo dõi sản lượng đầu ra, tỷ lệ phế phẩm và chi phí sản xuất theo từng máy và nhân công trên SQL Server.',
                 'version' => '1.0.0',
                 'is_active' => true,
@@ -279,7 +281,7 @@ class SmartReportSeeder extends Seeder
                         ],
                     ],
                 ],
-                'roles' => ['super_admin', 'report_viewer'],
+
                 'description' => 'Danh bạ nhân viên, phân loại phòng ban, chi nhánh và thang bậc lương khai thác trực tiếp từ Oracle.',
                 'version' => '1.0.0',
                 'is_active' => true,
@@ -326,7 +328,7 @@ class SmartReportSeeder extends Seeder
                         'type' => 'date',
                     ],
                 ],
-                'roles' => ['super_admin'],
+
                 'description' => 'Cross-Engine JOIN giữa Oracle HR (thông tin nhân viên, bậc lương) và SQL Server ERP (lệnh sản xuất, sản lượng, phế phẩm).',
                 'version' => '1.0.0',
                 'is_active' => true,
@@ -374,7 +376,7 @@ class SmartReportSeeder extends Seeder
                         'type' => 'date',
                     ],
                 ],
-                'roles' => ['super_admin'],
+
                 'description' => '3-Way Enterprise Federation CTE kết hợp hợp đồng ngoại thương (Postgres North & South), lệnh sản xuất (SQL Server ERP) và nhân sự (Oracle HR).',
                 'version' => '1.0.0',
                 'is_active' => true,
@@ -415,7 +417,7 @@ class SmartReportSeeder extends Seeder
                         'expected' => 'Bản ghi xuất hiện trong bảng dbo.production_orders khớp mã hợp đồng.',
                     ],
                 ],
-                'roles' => ['super_admin', 'report_viewer'],
+
                 'is_active' => true,
             ]
         );

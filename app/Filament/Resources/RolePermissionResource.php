@@ -5,8 +5,8 @@ namespace App\Filament\Resources;
 use App\Filament\Resources\RolePermissionResource\Pages;
 use App\Models\CustomView;
 use App\Models\DataSource;
-use App\Models\MenuGroup;
 use App\Models\RolePermission;
+use App\Models\SitTemplate;
 use App\Models\User;
 use BackedEnum;
 use Filament\Actions\BulkActionGroup;
@@ -77,7 +77,7 @@ class RolePermissionResource extends Resource
                                     ->required()
                                     ->unique(ignoreRecord: true)
                                     ->maxLength(255)
-                                    ->disabled(fn (?RolePermission $record): bool => (bool) $record?->is_system)
+                                    ->disabled(fn (string $operation): bool => $operation === 'edit')
                                     ->placeholder('vd: super_admin, report_viewer'),
                                 TextInput::make('role_name')
                                     ->label('Tên vai trò')
@@ -96,18 +96,16 @@ class RolePermissionResource extends Resource
                     ]),
                 Section::make('Phạm vi phân quyền')
                     ->schema([
-                        Select::make('allowed_groups')
-                            ->label('Nhóm Menu được phép')
-                            ->multiple()
-                            ->preload()
-                            ->searchable()
-                            ->options(fn (): array => ['*' => 'Tất cả nhóm (*)'] + MenuGroup::pluck('title', 'group_code')->toArray()),
                         Select::make('allowed_views')
                             ->label('Báo cáo (Custom View) được phép')
                             ->multiple()
                             ->preload()
                             ->searchable()
                             ->options(fn (): array => ['*' => 'Tất cả báo cáo (*)'] + CustomView::pluck('view_name', 'view_code')->toArray()),
+                        Select::make('allowed_sit_templates')
+                            ->label('Kịch bản SIT được phép')
+                            ->multiple()->preload()->searchable()
+                            ->options(fn (): array => ['*' => 'Tất cả kịch bản SIT (*)'] + SitTemplate::pluck('template_name', 'template_code')->toArray()),
                         Select::make('allowed_sources')
                             ->label('Nguồn dữ liệu DB được phép')
                             ->multiple()
@@ -138,15 +136,12 @@ class RolePermissionResource extends Resource
                     ->label('Hệ thống')
                     ->boolean()
                     ->sortable(),
-                TextColumn::make('allowed_groups')
-                    ->label('Nhóm được phép')
-                    ->badge()
-                    ->separator(','),
                 TextColumn::make('allowed_views')
                     ->label('Báo cáo được phép')
                     ->badge()
                     ->separator(',')
                     ->toggleable(),
+                TextColumn::make('allowed_sit_templates')->label('SIT được phép')->badge()->separator(',')->toggleable(),
                 TextColumn::make('allowed_sources')
                     ->label('Nguồn được phép')
                     ->badge()

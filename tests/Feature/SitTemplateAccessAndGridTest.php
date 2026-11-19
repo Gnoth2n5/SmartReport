@@ -22,7 +22,7 @@ class SitTemplateAccessAndGridTest extends TestCase
         $this->seed();
         Filament::setCurrentPanel(Filament::getPanel('admin'));
         $reader = User::factory()->create(['roles' => ['report_viewer']]);
-        $private = SitTemplate::create(['template_code' => 'private-sit', 'template_name' => 'Private SIT', 'roles' => ['super_admin'], 'is_active' => true]);
+        $private = SitTemplate::create(['template_code' => 'private-sit', 'template_name' => 'Private SIT', 'is_active' => true]);
         $shared = SitTemplate::where('template_code', 'sit-erp-order-sync')->firstOrFail();
         $this->actingAs($reader);
 
@@ -54,9 +54,9 @@ class SitTemplateAccessAndGridTest extends TestCase
     {
         $this->seed();
         Filament::setCurrentPanel(Filament::getPanel('admin'));
-        $private = SitTemplate::create(['template_code' => 'granted-sit', 'template_name' => 'Granted SIT', 'roles' => ['super_admin'], 'is_active' => true]);
-        $inactive = SitTemplate::create(['template_code' => 'inactive-sit', 'template_name' => 'Inactive SIT', 'roles' => ['custom_reader'], 'is_active' => false]);
-        RolePermission::create(['role_code' => 'custom_reader', 'role_name' => 'Custom reader', 'allowed_views' => [$private->template_code]]);
+        $private = SitTemplate::create(['template_code' => 'granted-sit', 'template_name' => 'Granted SIT', 'is_active' => true]);
+        $inactive = SitTemplate::create(['template_code' => 'inactive-sit', 'template_name' => 'Inactive SIT', 'is_active' => false]);
+        RolePermission::create(['role_code' => 'custom_reader', 'role_name' => 'Custom reader', 'allowed_sit_templates' => [$private->template_code, $inactive->template_code]]);
         $this->actingAs(User::factory()->create(['roles' => ['custom_reader']]));
         Livewire::test(ListSitTemplates::class)->assertCanSeeTableRecords([$private])->assertCanNotSeeTableRecords([$inactive]);
     }

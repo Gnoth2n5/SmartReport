@@ -4,14 +4,12 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\MenuGroupResource\Pages;
 use App\Models\MenuGroup;
-use App\Models\RolePermission;
 use App\Models\User;
 use BackedEnum;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
-use Filament\Forms\Components\TagsInput;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Resources\Resource;
@@ -74,11 +72,6 @@ class MenuGroupResource extends Resource
                                     ->numeric()
                                     ->default(0)
                                     ->required(),
-                                TagsInput::make('roles')
-                                    ->label('Vai trò được phép')
-                                    ->suggestions(fn (): array => RolePermission::pluck('role_code')->toArray())
-                                    ->placeholder('Thêm vai trò')
-                                    ->columnSpanFull(),
                                 Toggle::make('is_active')
                                     ->label('Kích hoạt')
                                     ->default(true),
@@ -105,10 +98,6 @@ class MenuGroupResource extends Resource
                 TextColumn::make('icon')
                     ->label('Icon')
                     ->placeholder('—'),
-                TextColumn::make('roles')
-                    ->label('Vai trò')
-                    ->badge()
-                    ->separator(','),
                 IconColumn::make('is_active')
                     ->label('Kích hoạt')
                     ->boolean()

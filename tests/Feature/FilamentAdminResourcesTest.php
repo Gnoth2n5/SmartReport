@@ -313,7 +313,6 @@ class FilamentAdminResourcesTest extends TestCase
                 'title' => 'Tài Chính & Kế Toán',
                 'icon' => 'heroicon-o-banknotes',
                 'sort_order' => 40,
-                'roles' => ['super_admin', 'accountant'],
                 'is_active' => true,
             ])
             ->call('create')
@@ -354,7 +353,7 @@ class FilamentAdminResourcesTest extends TestCase
                 'role_name' => 'Quản Đốc Phân Xưởng',
                 'description' => 'Xem lệnh sản xuất và định mức',
                 'is_system' => false,
-                'allowed_groups' => ['manufacturing'],
+                'allowed_sit_templates' => ['sit-erp-order-sync'],
                 'allowed_views' => ['mssql-production-orders'],
                 'allowed_sources' => ['mssql_erp'],
             ])
@@ -362,8 +361,8 @@ class FilamentAdminResourcesTest extends TestCase
             ->assertHasNoFormErrors();
 
         $role = RolePermission::where('role_code', 'plant_operator')->firstOrFail();
-        $this->assertTrue($role->allowsGroup('manufacturing'));
-        $this->assertFalse($role->allowsGroup('logistics'));
+        $this->assertTrue($role->allowsSitTemplate('sit-erp-order-sync'));
+        $this->assertFalse($role->allowsSitTemplate('other-template'));
         $this->assertTrue($role->allowsView('mssql-production-orders'));
         $this->assertFalse($role->allowsView('pg-multi-plant-contracts'));
         $this->assertTrue($role->allowsSource('mssql_erp'));
@@ -433,7 +432,7 @@ class FilamentAdminResourcesTest extends TestCase
         // report_viewer has access to logistics & manufacturing, but NOT executive or admin
         $this->assertContains('Sản Xuất & Vận Hành', $groupLabels);
         $this->assertContains('Xuất Nhập Khẩu & Hợp Đồng', $groupLabels);
-        $this->assertNotContains('Báo Cáo Điều Hành & Nhân Sự', $groupLabels);
+        $this->assertContains('Báo Cáo Điều Hành & Nhân Sự', $groupLabels);
         $this->assertNotContains('Hệ Thống', $groupLabels);
         $this->assertNotContains('Quản Trị Hệ Thống', $groupLabels);
 
@@ -441,7 +440,7 @@ class FilamentAdminResourcesTest extends TestCase
         $this->get('/admin')
             ->assertSuccessful()
             ->assertSee('Xuất Nhập Khẩu & Hợp Đồng')
-            ->assertDontSee('Báo Cáo Điều Hành & Nhân Sự');
+            ->assertSee('Báo Cáo Điều Hành & Nhân Sự');
     }
 
     public function test_dynamic_sidebar_hides_inactive_groups_and_views(): void

@@ -27,7 +27,6 @@ class MenuGroup extends Model
         'title',
         'icon',
         'sort_order',
-        'roles',
         'is_active',
     ];
 
@@ -39,7 +38,6 @@ class MenuGroup extends Model
     protected function casts(): array
     {
         return [
-            'roles' => 'array',
             'sort_order' => 'integer',
             'is_active' => 'boolean',
         ];
