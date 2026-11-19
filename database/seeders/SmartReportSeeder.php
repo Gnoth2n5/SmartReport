@@ -9,7 +9,6 @@ use App\Models\RolePermission;
 use App\Models\SitTemplate;
 use App\Models\SitTestRun;
 use App\Models\User;
-use App\Services\Database\ExternalTestDatabaseProvisioner;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
@@ -17,39 +16,10 @@ use Illuminate\Support\Facades\Storage;
 class SmartReportSeeder extends Seeder
 {
     /**
-     * Controls whether external Docker databases (PostgreSQL, SQL Server, Oracle)
-     * should be provisioned with realistic sample tables.
-     */
-    public static bool $seedExternal = true;
-
-    /**
-     * Cache flag to ensure external databases are provisioned at most once
-     * per PHP execution lifecycle (e.g. across test suites).
-     */
-    protected static bool $alreadyProvisioned = false;
-
-    /**
-     * Reset provision state (useful for test teardown or explicit re-provisioning).
-     */
-    public static function resetProvisionState(): void
-    {
-        static::$alreadyProvisioned = false;
-        static::$seedExternal = true;
-    }
-
-    /**
      * Run the database seeds.
      */
     public function run(): void
     {
-        // 1. Provision schemas and realistic sample data on all 4 external Docker DBs
-        if (static::$seedExternal && ! static::$alreadyProvisioned) {
-            $provisioner = new ExternalTestDatabaseProvisioner;
-            $provisioner->provisionAll();
-            static::$alreadyProvisioned = true;
-        }
-
-        // 2. Seed SQLite models
         $this->seedSqliteModels();
     }
 

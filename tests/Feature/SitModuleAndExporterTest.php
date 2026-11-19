@@ -30,7 +30,6 @@ class SitModuleAndExporterTest extends TestCase
     {
         parent::setUp();
 
-        SmartReportSeeder::$seedExternal = false;
         $this->seed(SmartReportSeeder::class);
 
         $this->adminUser = User::where('email', 'admin@smartreport.test')->firstOrFail();
@@ -44,7 +43,6 @@ class SitModuleAndExporterTest extends TestCase
 
     protected function tearDown(): void
     {
-        SmartReportSeeder::$seedExternal = true;
 
         parent::tearDown();
     }

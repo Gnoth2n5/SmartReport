@@ -21,7 +21,7 @@ Nền tảng báo cáo và phân tích dữ liệu đa nguồn (Multi-Database A
 
 ## Yêu cầu hệ thống
 
-- PHP `^8.3` (extensions: `sqlite3`, `zip`, `mbstring`, `xml`, `curl`)
+- PHP `^8.3` (extensions: `sqlite3`, `zip`, `mbstring`, `xml`, `curl`, `intl`)
 - Composer & Node.js / NPM
 - DuckDB CLI `v2.0.0` (đặt tại `storage/bin/duckdb` hoặc cấu hình qua biến môi trường `DUCKDB_BINARY`) with extensions: `postgres`, `mssql`, `oracle_scanner`, `excel`
 - (Tùy chọn cho môi trường test/demo) 4 Docker Database containers:
@@ -35,9 +35,13 @@ Nền tảng báo cáo và phân tích dữ liệu đa nguồn (Multi-Database A
 ```bash
 # 1. Cài đặt dependencies, tạo .env, migrate SQLite và build assets
 composer setup
+composer check-platform-reqs
 
-# 2. Seed dữ liệu cấu hình mẫu và khởi tạo dữ liệu trên 4 DB ngoài
-php artisan db:seed
+# 2. Seed cấu hình mẫu (không sửa dữ liệu DB ngoài)
+php artisan db:seed --no-interaction
+
+# Chỉ chạy khi cần khởi tạo/reset bảng mẫu trên 4 Docker DB
+php artisan smartreport:provision-test-databases --no-interaction
 
 # 3. Khởi chạy server phát triển (http://127.0.0.1:8000/admin)
 composer dev

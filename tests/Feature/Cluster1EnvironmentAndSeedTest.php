@@ -7,6 +7,7 @@ use App\Models\DataSource;
 use App\Models\MenuGroup;
 use App\Models\RolePermission;
 use App\Models\User;
+use App\Services\Database\ExternalTestDatabaseProvisioner;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\Process\Process;
@@ -19,6 +20,17 @@ class Cluster1EnvironmentAndSeedTest extends TestCase
     /**
      * Test smartreport configuration file and duckdb binary.
      */
+    public function test_metadata_seeding_and_storage_do_not_touch_the_running_application(): void
+    {
+        $this->mock(ExternalTestDatabaseProvisioner::class)->shouldNotReceive('provisionAll');
+        $this->seed();
+
+        $this->assertSame(4, DataSource::count());
+        $this->assertStringStartsWith(sys_get_temp_dir().'/smartreport-tests-', storage_path());
+        $this->assertSame(storage_path('app/snapshots'), config('smartreport.snapshot_dir'));
+        $this->assertSame(storage_path('app/public'), config('filesystems.disks.public.root'));
+    }
+
     public function test_smartreport_config_and_duckdb_binary_are_valid(): void
     {
         $config = config('smartreport');

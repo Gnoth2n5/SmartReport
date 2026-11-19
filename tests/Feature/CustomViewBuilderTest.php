@@ -28,7 +28,7 @@ class CustomViewBuilderTest extends TestCase
         parent::setUp();
 
         // 1. Prevent re-running heavy external Docker DB provisioning on each test
-        SmartReportSeeder::$seedExternal = false;
+
         $this->seed(SmartReportSeeder::class);
 
         // 2. Setup authenticated users
@@ -51,8 +51,6 @@ class CustomViewBuilderTest extends TestCase
                 @unlink($snapshot);
             }
         }
-
-        SmartReportSeeder::$seedExternal = true;
 
         parent::tearDown();
     }

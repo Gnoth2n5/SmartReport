@@ -39,7 +39,7 @@ class FilamentAdminResourcesTest extends TestCase
         parent::setUp();
 
         // Avoid hammering external Docker DBs with DDL during UI feature tests
-        SmartReportSeeder::$seedExternal = false;
+
         $this->seed(SmartReportSeeder::class);
 
         $this->adminUser = User::where('email', 'admin@smartreport.test')->firstOrFail();
@@ -53,7 +53,6 @@ class FilamentAdminResourcesTest extends TestCase
 
     protected function tearDown(): void
     {
-        SmartReportSeeder::$seedExternal = true;
 
         parent::tearDown();
     }

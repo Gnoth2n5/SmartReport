@@ -57,21 +57,12 @@ class ReportRunnerAndSqlExportTest extends TestCase
             File::deleteDirectory($this->testArtifactsDir);
         }
 
-        SmartReportSeeder::$seedExternal = true;
-
         parent::tearDown();
     }
 
     protected function seedSqliteOnly(): void
     {
-        SmartReportSeeder::$seedExternal = false;
-        $this->seed(SmartReportSeeder::class);
-        $this->initUsers();
-    }
 
-    protected function seedWithExternal(): void
-    {
-        SmartReportSeeder::$seedExternal = true;
         $this->seed(SmartReportSeeder::class);
         $this->initUsers();
     }
@@ -162,7 +153,7 @@ class ReportRunnerAndSqlExportTest extends TestCase
 
     public function test_report_runner_returns_200_for_authorized_report_viewer(): void
     {
-        $this->seedWithExternal();
+        $this->seedSqliteOnly();
 
         $this->actingAs($this->viewerUser);
 
@@ -221,7 +212,7 @@ class ReportRunnerAndSqlExportTest extends TestCase
 
     public function test_report_runner_single_or_union_source_switching(): void
     {
-        $this->seedWithExternal();
+        $this->seedSqliteOnly();
 
         $this->actingAs($this->superAdmin);
 
@@ -244,7 +235,7 @@ class ReportRunnerAndSqlExportTest extends TestCase
 
     public function test_report_runner_dynamic_param_injection_today_expansion_and_reset(): void
     {
-        $this->seedWithExternal();
+        $this->seedSqliteOnly();
 
         $this->actingAs($this->superAdmin);
 
@@ -312,7 +303,7 @@ class ReportRunnerAndSqlExportTest extends TestCase
 
     public function test_report_runner_snapshot_pagination_never_queries_external_dbs(): void
     {
-        $this->seedWithExternal();
+        $this->seedSqliteOnly();
 
         $this->actingAs($this->superAdmin);
 
@@ -355,7 +346,7 @@ class ReportRunnerAndSqlExportTest extends TestCase
 
     public function test_report_runner_renders_all_three_tabs_and_redacts_passwords(): void
     {
-        $this->seedWithExternal();
+        $this->seedSqliteOnly();
 
         $this->actingAs($this->superAdmin);
 
@@ -406,7 +397,7 @@ class ReportRunnerAndSqlExportTest extends TestCase
 
     public function test_report_runner_exports_valid_xlsx_and_utf8_bom_csv(): void
     {
-        $this->seedWithExternal();
+        $this->seedSqliteOnly();
 
         $this->actingAs($this->viewerUser);
 
@@ -471,7 +462,7 @@ class ReportRunnerAndSqlExportTest extends TestCase
 
     public function test_sql_export_streams_valid_xlsx_from_selected_source(): void
     {
-        $this->seedWithExternal();
+        $this->seedSqliteOnly();
 
         $this->actingAs($this->adminUser);
 
@@ -499,7 +490,7 @@ class ReportRunnerAndSqlExportTest extends TestCase
 
     public function test_sql_export_streams_valid_utf8_bom_csv(): void
     {
-        $this->seedWithExternal();
+        $this->seedSqliteOnly();
 
         $this->actingAs($this->superAdmin);
 
@@ -523,7 +514,7 @@ class ReportRunnerAndSqlExportTest extends TestCase
 
     public function test_sql_export_streams_chunked_zip_and_cleans_up_temp_snapshot(): void
     {
-        $this->seedWithExternal();
+        $this->seedSqliteOnly();
 
         $this->actingAs($this->adminUser);
 
@@ -591,7 +582,7 @@ class ReportRunnerAndSqlExportTest extends TestCase
 
     public function test_sql_export_supports_federated_all_sources_query(): void
     {
-        $this->seedWithExternal();
+        $this->seedSqliteOnly();
 
         $this->actingAs($this->superAdmin);
 
@@ -660,7 +651,7 @@ class ReportRunnerAndSqlExportTest extends TestCase
 
     public function test_sql_export_executes_cte_with_trailing_semicolon_and_comment(): void
     {
-        $this->seedWithExternal();
+        $this->seedSqliteOnly();
 
         $this->actingAs($this->adminUser);
 
@@ -739,7 +730,7 @@ class ReportRunnerAndSqlExportTest extends TestCase
 
     public function test_report_runner_snapshot_health_reports_genuine_utc_and_30min_ttl(): void
     {
-        $this->seedWithExternal();
+        $this->seedSqliteOnly();
         $this->actingAs($this->superAdmin);
 
         $component = Livewire::test(ReportRunnerPage::class, ['viewCode' => 'pg-multi-plant-contracts']);
@@ -760,7 +751,7 @@ class ReportRunnerAndSqlExportTest extends TestCase
 
     public function test_report_runner_enforces_role_source_permissions_locks_pagination_and_resets_snapshot_on_error(): void
     {
-        $this->seedWithExternal();
+        $this->seedSqliteOnly();
 
         // Restrict report_viewer RolePermission to pg_north only
         RolePermission::where('role_code', 'report_viewer')->update([
