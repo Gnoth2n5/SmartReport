@@ -51,32 +51,33 @@ class MenuGroupResource extends Resource
                     ->schema([
                         Grid::make(['default' => 1, 'sm' => 2])
                             ->schema([
-                                TextInput::make('group_code')
-                                    ->label('Mã nhóm Menu')
-                                    ->required()
-                                    ->unique(ignoreRecord: true)
-                                    ->maxLength(255)
-                                    ->placeholder('vd: manufacturing, logistics'),
                                 TextInput::make('title')
                                     ->label('Tiêu đề nhóm')
                                     ->required()
                                     ->maxLength(255)
                                     ->placeholder('vd: Sản Xuất & Vận Hành'),
-                                TextInput::make('icon')
-                                    ->label('Icon (Heroicon)')
-                                    ->default('heroicon-o-folder')
-                                    ->maxLength(255)
-                                    ->placeholder('heroicon-o-folder'),
-                                TextInput::make('sort_order')
-                                    ->label('Thứ tự sắp xếp')
-                                    ->numeric()
-                                    ->default(0)
-                                    ->required(),
                                 Toggle::make('is_active')
                                     ->label('Kích hoạt')
                                     ->default(true),
                             ]),
                     ]),
+                Section::make('Nâng cao')->collapsed()->schema([
+                    TextInput::make('group_code')
+                        ->label('Mã nhóm Menu')
+                        ->unique(ignoreRecord: true)
+                        ->maxLength(255)
+                        ->placeholder('vd: manufacturing, logistics'),
+                    TextInput::make('icon')
+                        ->label('Icon (Heroicon)')
+                        ->default('heroicon-o-folder')
+                        ->maxLength(255)
+                        ->placeholder('heroicon-o-folder'),
+                    TextInput::make('sort_order')
+                        ->label('Thứ tự sắp xếp')
+                        ->numeric()
+                        ->default(0)
+                        ->required(),
+                ]),
             ]);
     }
 
@@ -103,7 +104,7 @@ class MenuGroupResource extends Resource
                     ->boolean()
                     ->sortable(),
             ])
-            ->defaultSort('sort_order', 'asc')
+            ->defaultSort('sort_order', 'asc')->reorderable('sort_order')
             ->filters([
                 TernaryFilter::make('is_active')
                     ->label('Trạng thái kích hoạt'),

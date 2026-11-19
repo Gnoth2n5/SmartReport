@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\GeneratesStableCode;
 use App\Services\Sql\SqlParameterExtractor;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -10,7 +11,7 @@ use Illuminate\Validation\ValidationException;
 
 class CustomView extends Model
 {
-    use HasFactory;
+    use GeneratesStableCode, HasFactory;
 
     public const MODE_SINGLE_OR_UNION = 'single_or_union';
 
@@ -20,6 +21,10 @@ class CustomView extends Model
         self::MODE_SINGLE_OR_UNION,
         self::MODE_FEDERATED_JOIN,
     ];
+
+    protected const CODE_FIELD = 'view_code';
+
+    protected const CODE_LABEL = 'view_name';
 
     /**
      * The table associated with the model.

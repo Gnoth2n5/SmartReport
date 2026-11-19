@@ -2,12 +2,13 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\GeneratesStableCode;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
 class DataSource extends Model
 {
-    use HasFactory;
+    use GeneratesStableCode, HasFactory;
 
     public const DRIVER_SQLSRV = 'sqlsrv';
 
@@ -20,6 +21,10 @@ class DataSource extends Model
         self::DRIVER_PGSQL,
         self::DRIVER_ORACLE,
     ];
+
+    protected const CODE_FIELD = 'code';
+
+    protected const CODE_LABEL = 'name';
 
     /**
      * The table associated with the model.

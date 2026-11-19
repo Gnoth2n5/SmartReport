@@ -73,8 +73,7 @@ class RolePermissionResource extends Resource
                         Grid::make(['default' => 1, 'sm' => 2])
                             ->schema([
                                 TextInput::make('role_code')
-                                    ->label('Mã vai trò')
-                                    ->required()
+                                    ->label('Mã vai trò (tự sinh)')
                                     ->unique(ignoreRecord: true)
                                     ->maxLength(255)
                                     ->disabled(fn (string $operation): bool => $operation === 'edit')

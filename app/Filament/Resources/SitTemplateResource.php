@@ -65,13 +65,6 @@ class SitTemplateResource extends Resource
                     ->schema([
                         Grid::make(['default' => 1, 'md' => 2])
                             ->schema([
-                                TextInput::make('template_code')
-                                    ->label('Mã kịch bản (Template Code)')
-                                    ->required()
-                                    ->unique(ignoreRecord: true)
-                                    ->maxLength(255)
-                                    ->placeholder('vd: sit-erp-order-sync')
-                                    ->disabled(fn (string $operation): bool => $operation === 'edit'),
                                 TextInput::make('template_name')
                                     ->label('Tên kịch bản SIT')
                                     ->required()
@@ -166,6 +159,15 @@ class SitTemplateResource extends Resource
                             ->defaultItems(1)
                             ->collapsible(),
                     ]),
+
+                Section::make('Nâng cao')->collapsed()->schema([
+                    TextInput::make('template_code')
+                        ->label('Mã kỹ thuật (tự sinh)')
+                        ->unique(ignoreRecord: true)
+                        ->maxLength(255)
+                        ->placeholder('vd: sit-erp-order-sync')
+                        ->disabled(fn (string $operation): bool => $operation === 'edit'),
+                ]),
 
                 Section::make('Quyền truy cập')
                     ->description('Cấp và thu hồi quyền tại màn hình Phân quyền. Super admin luôn có quyền.')

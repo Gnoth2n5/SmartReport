@@ -19,6 +19,8 @@ use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Section;
+use Filament\Schemas\Components\Utilities\Get;
+use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
@@ -56,12 +58,6 @@ class DataSourceResource extends Resource
                     ->schema([
                         Grid::make(['default' => 1, 'sm' => 2])
                             ->schema([
-                                TextInput::make('code')
-                                    ->label('Mã nguồn dữ liệu')
-                                    ->required()
-                                    ->unique(ignoreRecord: true)
-                                    ->maxLength(255)
-                                    ->placeholder('vd: pg_north, mssql_erp'),
                                 TextInput::make('name')
                                     ->label('Tên hiển thị')
                                     ->required()
@@ -74,6 +70,18 @@ class DataSourceResource extends Resource
                                         DataSource::DRIVER_PGSQL => 'PostgreSQL (pgsql)',
                                         DataSource::DRIVER_ORACLE => 'Oracle (oracle)',
                                     ])
+                                    ->default('pgsql')->live()
+                                    ->afterStateUpdated(function (?string $state, ?string $old, Get $get, Set $set): void {
+                                        $defaults = ['pgsql' => [5432, 'public'], 'sqlsrv' => [1433, 'dbo'], 'oracle' => [1521, 'APP']];
+                                        [$port, $schema] = $defaults[$state] ?? [5432, 'public'];
+                                        [$oldPort, $oldSchema] = $defaults[$old] ?? [null, null];
+                                        if (blank($get('port')) || (int) $get('port') === $oldPort) {
+                                            $set('port', $port);
+                                        }
+                                        if (blank($get('default_schema')) || $get('default_schema') === $oldSchema) {
+                                            $set('default_schema', $schema);
+                                        }
+                                    })
                                     ->required()
                                     ->in(DataSource::ALLOWED_DRIVERS)
                                     ->columnSpanFull(),
@@ -92,25 +100,18 @@ class DataSourceResource extends Resource
                                     ->required()
                                     ->default('127.0.0.1')
                                     ->maxLength(255),
-                                TextInput::make('port')
-                                    ->label('Cổng / Port')
-                                    ->numeric()
-                                    ->required(),
                                 TextInput::make('database_name')
-                                    ->label('Tên Database')
-                                    ->nullable()
+                                    ->label('Cơ sở dữ liệu')
+                                    ->visible(fn (Get $get): bool => $get('driver') !== 'oracle')
+                                    ->required(fn (Get $get): bool => $get('driver') !== 'oracle')
                                     ->maxLength(255)
                                     ->placeholder('source_db / erp_production'),
                                 TextInput::make('service_name')
-                                    ->label('Service Name (Oracle)')
-                                    ->nullable()
+                                    ->label('Dịch vụ Oracle')
+                                    ->visible(fn (Get $get): bool => $get('driver') === 'oracle')
+                                    ->required(fn (Get $get): bool => $get('driver') === 'oracle')
                                     ->maxLength(255)
                                     ->placeholder('FREEPDB1'),
-                                TextInput::make('default_schema')
-                                    ->label('Schema mặc định')
-                                    ->nullable()
-                                    ->maxLength(255)
-                                    ->placeholder('public / dbo / APP'),
                                 TextInput::make('username')
                                     ->label('Tài khoản')
                                     ->required()
@@ -124,6 +125,11 @@ class DataSourceResource extends Resource
                                     ->maxLength(255),
                             ]),
                     ]),
+                Section::make('Nâng cao')->collapsed()->schema([
+                    TextInput::make('code')->label('Mã kỹ thuật (tự sinh)')->unique(ignoreRecord: true)->maxLength(255)->disabled(fn (string $operation): bool => $operation === 'edit'),
+                    TextInput::make('port')->label('Cổng')->numeric()->required()->default(5432)->minValue(1)->maxValue(65535),
+                    TextInput::make('default_schema')->label('Schema')->default('public')->nullable()->maxLength(255),
+                ]),
 
             ]);
     }

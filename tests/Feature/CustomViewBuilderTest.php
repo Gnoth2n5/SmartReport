@@ -276,7 +276,6 @@ class CustomViewBuilderTest extends TestCase
             ])
             ->call('create')
             ->assertHasFormErrors([
-                'view_code' => 'required',
                 'view_name' => 'required',
                 'execution_mode' => 'required',
             ]);

@@ -75,13 +75,6 @@ class CustomViewResource extends Resource
                     ->schema([
                         Grid::make(['default' => 1, 'md' => 3])
                             ->schema([
-                                TextInput::make('view_code')
-                                    ->label('Mã báo cáo (View Code)')
-                                    ->required()
-                                    ->unique(ignoreRecord: true)
-                                    ->maxLength(255)
-                                    ->placeholder('vd: pg-multi-plant-contracts')
-                                    ->disabled(fn (string $operation): bool => $operation === 'edit'),
                                 TextInput::make('view_name')
                                     ->label('Tên báo cáo')
                                     ->required()
@@ -97,11 +90,6 @@ class CustomViewResource extends Resource
                             ]),
                         Grid::make(['default' => 1, 'sm' => 2])
                             ->schema([
-                                TextInput::make('version')
-                                    ->label('Phiên bản')
-                                    ->default('1.0.0')
-                                    ->required()
-                                    ->maxLength(50),
                                 Toggle::make('is_active')
                                     ->label('Kích hoạt báo cáo')
                                     ->default(true),
@@ -235,6 +223,19 @@ class CustomViewResource extends Resource
                                 ]),
                             ]),
                     ]),
+
+                Section::make('Nâng cao')->collapsed()->schema([
+                    TextInput::make('view_code')
+                        ->label('Mã kỹ thuật (tự sinh)')
+                        ->unique(ignoreRecord: true)
+                        ->maxLength(255)
+                        ->placeholder('vd: pg-multi-plant-contracts')
+                        ->disabled(fn (string $operation): bool => $operation === 'edit'),
+                    TextInput::make('version')
+                        ->label('Phiên bản')
+                        ->default('1.0.0')
+                        ->maxLength(50),
+                ]),
 
                 Section::make('Quyền truy cập')
                     ->description('Cấp và thu hồi quyền tại màn hình Phân quyền. Super admin luôn có quyền.')

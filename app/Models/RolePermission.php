@@ -2,12 +2,18 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\GeneratesStableCode;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
 class RolePermission extends Model
 {
+    use GeneratesStableCode;
     use HasFactory;
+
+    protected const CODE_FIELD = 'role_code';
+
+    protected const CODE_LABEL = 'role_name';
 
     /**
      * The table associated with the model.
