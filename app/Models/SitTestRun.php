@@ -47,6 +47,7 @@ class SitTestRun extends Model
         return [
             'tested_at' => 'datetime',
             'steps_data' => 'array',
+            'revision' => 'integer',
         ];
     }
 

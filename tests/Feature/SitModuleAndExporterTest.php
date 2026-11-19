@@ -131,10 +131,10 @@ class SitModuleAndExporterTest extends TestCase
         $this->assertCount(1, $run->steps_data[2]['images']);
 
         $pastedImagePath = $run->steps_data[2]['images'][0]['path'];
-        $this->assertTrue(Storage::disk('public')->exists($pastedImagePath));
+        $this->assertTrue(Storage::disk('local')->exists($pastedImagePath));
 
         // Verify authenticated evidence image route serves the pasted image
-        $this->get('/admin/sit-evidence/'.$pastedImagePath)
+        $this->get('/admin/sit-evidence/'.$initialRunId.'/'.$pastedImagePath)
             ->assertSuccessful();
 
         // Clone / Retest current run and mark step 3 as PASS
@@ -143,6 +143,8 @@ class SitModuleAndExporterTest extends TestCase
         $this->assertNotEquals($initialRunId, $clonedRunId);
 
         $component
+            ->set('steps.2.fields.action', 'Đối soát tồn kho')
+            ->set('steps.2.fields.expected', 'Số lượng khớp')
             ->call('setStepStatus', 2, SitTestRun::STEP_PASS)
             ->call('saveRun');
 

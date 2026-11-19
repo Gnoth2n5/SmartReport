@@ -93,3 +93,10 @@ npx playwright test
 Ứng dụng từ chối phân trang/xuất snapshot hết hạn. Scheduler dọn file cũ mỗi 5 phút.
 Chạy scheduler trong môi trường phát triển bằng `php artisan schedule:work --no-interaction`,
 hoặc thêm `php artisan schedule:run --no-interaction` vào cron mỗi phút khi triển khai.
+
+## Cập nhật ảnh bằng chứng SIT
+
+Ảnh SIT được lưu trong vùng `storage/app/private/sit-evidence` và chỉ được phục vụ
+qua đợt test có quyền truy cập. Khi cập nhật bản cũ, chạy
+`php artisan migrate --no-interaction` rồi `php artisan smartreport:secure-sit-evidence --no-interaction`
+để chuyển ảnh công khai sang vùng riêng; đường dẫn đã lưu và ảnh dùng chung khi retest được giữ nguyên.

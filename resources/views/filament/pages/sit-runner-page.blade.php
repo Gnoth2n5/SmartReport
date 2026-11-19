@@ -1,4 +1,14 @@
 <x-filament-panels::page>
+    @if ($errors->any())
+        <div role="alert" style="color: #dc2626;">
+            @foreach ($errors->all() as $message)
+                <p>{{ $message }}</p>
+            @endforeach
+            @error('runRevision')
+                <x-filament::button color="gray" wire:click="selectRun({{ $loadedRunId }})">Tải lại đợt test</x-filament::button>
+            @enderror
+        </div>
+    @endif
     @php
         $template = $this->getTemplate();
         $fieldDefs = $template->resolvedStepFields();
@@ -358,9 +368,9 @@
                         <div class="sit-img-grid">
                             @foreach ($step['images'] as $imgIdx => $img)
                                 <div class="sit-img-card" wire:key="img-{{ $sIdx }}-{{ $imgIdx }}">
-                                    <a href="{{ url('/admin/sit-evidence/' . $img['path']) }}" target="_blank" rel="noopener">
+                                    <a href="{{ route('sit.evidence.image', ['run' => $loadedRunId, 'path' => $img['path']]) }}" target="_blank" rel="noopener">
                                         <img
-                                            src="{{ url('/admin/sit-evidence/' . $img['path']) }}"
+                                            src="{{ route('sit.evidence.image', ['run' => $loadedRunId, 'path' => $img['path']]) }}"
                                             alt="{{ $img['caption'] ?? 'Evidence' }}"
                                             class="sit-img-preview"
                                         />

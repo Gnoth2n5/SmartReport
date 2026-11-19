@@ -435,26 +435,26 @@ class SitDocumentExporter
      */
     public function resolveImagePath(string $relativePath): ?string
     {
-        $clean = ltrim(str_replace(['..\\', '../'], '', $relativePath), '/');
-        if ($clean === '') {
+        if (! str_starts_with($relativePath, 'sit-evidence/') || str_contains($relativePath, "\0") || str_contains($relativePath, '\\') || in_array('..', explode('/', $relativePath), true)) {
             return null;
         }
 
-        if (File::exists($relativePath) && is_file($relativePath)) {
-            return $relativePath;
+        $root = realpath(Storage::disk('local')->path('sit-evidence'));
+        $path = realpath(Storage::disk('local')->path($relativePath));
+        if ($root === false || $path === false || ! str_starts_with($path, $root.DIRECTORY_SEPARATOR) || ! is_file($path)) {
+            return null;
         }
 
-        $diskPath = Storage::disk('public')->path($clean);
-        if (File::exists($diskPath) && is_file($diskPath)) {
-            return $diskPath;
-        }
+        $mime = match (strtolower(pathinfo($path, PATHINFO_EXTENSION))) {
+            'png' => 'image/png',
+            'jpg', 'jpeg' => 'image/jpeg',
+            'gif' => 'image/gif',
+            'webp' => 'image/webp',
+            default => null,
+        };
+        $info = @getimagesize($path);
 
-        $fallbackPath = storage_path('app/public/'.$clean);
-        if (File::exists($fallbackPath) && is_file($fallbackPath)) {
-            return $fallbackPath;
-        }
-
-        return null;
+        return $mime !== null && is_array($info) && ($info['mime'] ?? '') === $mime ? $path : null;
     }
 
     /**

@@ -15,6 +15,8 @@ use Filament\Support\Enums\Width;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Locked;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
@@ -32,6 +34,12 @@ class SitRunnerPage extends Page
     public string $templateCode = '';
 
     public ?int $selectedRunId = null;
+
+    #[Locked]
+    public ?int $loadedRunId = null;
+
+    #[Locked]
+    public int $runRevision = 0;
 
     public string $runTitle = '';
 
@@ -66,6 +74,11 @@ class SitRunnerPage extends Page
         }
 
         $this->loadRunState($latestRun);
+    }
+
+    public function hydrate(): void
+    {
+        $this->authorizeTemplateAccess($this->getTemplate());
     }
 
     public function getTitle(): string|Htmlable
@@ -106,6 +119,7 @@ class SitRunnerPage extends Page
         }
 
         $this->loadRunState($run);
+        $this->resetValidation();
     }
 
     /**
@@ -178,6 +192,57 @@ class SitRunnerPage extends Page
     public function saveRun(bool $notify = true): void
     {
         $run = $this->getCurrentRun();
+        $this->authorizeTemplateAccess($this->getTemplate());
+        $conflict = ['runRevision' => 'Đợt test đã được cập nhật ở nơi khác. Hãy tải lại đợt test trước khi lưu.'];
+        if ($run->revision !== $this->runRevision) {
+            throw ValidationException::withMessages($conflict);
+        }
+
+        $rules = [
+            'steps' => ['array'],
+            'steps.*' => ['array'],
+            'steps.*.fields' => ['array'],
+            'steps.*.fields.*' => ['nullable', 'string'],
+            'steps.*.images' => ['array'],
+            'steps.*.images.*.path' => ['required', 'string'],
+            'steps.*.images.*.caption' => ['nullable', 'string'],
+            'steps.*.extra_fields' => ['array'],
+            'steps.*.extra_fields.*.label' => ['nullable', 'string'],
+            'steps.*.extra_fields.*.value' => ['nullable', 'string'],
+            'steps.*.title' => ['nullable', 'string', 'max:255'],
+            'steps.*.uid' => ['required', 'string'],
+            'runTitle' => ['string', 'max:255'],
+            'testerName' => ['string', 'max:255'],
+        ];
+        $this->validate($rules);
+        $rules = [];
+        $attributes = [];
+        foreach ($this->steps as $index => $step) {
+            foreach ($this->getTemplate()->resolvedStepFields() as $field) {
+                $attributes["steps.{$index}.fields.{$field['key']}"] = 'Bước '.($index + 1).' — '.$field['label'];
+                $rules["steps.{$index}.fields.{$field['key']}"] = [
+                    Rule::requiredIf(($step['status'] ?? '') === SitTestRun::STEP_PASS && $field['required']),
+                    'nullable', 'string',
+                ];
+                if ($field['type'] === 'select') {
+                    $rules["steps.{$index}.fields.{$field['key']}"][] = Rule::in(array_keys($field['options'] ?? []));
+                }
+            }
+        }
+        if ($rules !== []) {
+            $this->validate($rules, ['required' => ':attribute là bắt buộc khi đánh dấu PASS.', 'in' => ':attribute không nằm trong danh sách cho phép.'], $attributes);
+        }
+
+        $existingPaths = collect($run->steps_data ?? [])->flatMap(fn (array $step): array => $step['images'] ?? [])->pluck('path')->all();
+        $exporter = app(SitDocumentExporter::class);
+        foreach ($this->steps as $index => $step) {
+            foreach ($step['images'] ?? [] as $imageIndex => $image) {
+                $path = $image['path'];
+                if ((! in_array($path, $existingPaths, true) && ! str_starts_with($path, "sit-evidence/{$run->id}/")) || $exporter->resolveImagePath($path) === null) {
+                    throw ValidationException::withMessages(["steps.{$index}.images.{$imageIndex}.path" => 'Ảnh bằng chứng không thuộc đợt test hoặc không hợp lệ.']);
+                }
+            }
+        }
 
         $normalizedSteps = [];
         foreach (array_values($this->steps) as $idx => $step) {
@@ -203,7 +268,11 @@ class SitRunnerPage extends Page
         $run->tested_at = now();
         $run->steps_data = $this->steps;
         $run->syncOverallStatus();
-        $run->save();
+        $run->revision = $this->runRevision + 1;
+        if (SitTestRun::whereKey($run->id)->where('revision', $this->runRevision)->update($run->getDirty()) !== 1) {
+            throw ValidationException::withMessages($conflict);
+        }
+        $this->runRevision = $run->revision;
 
         if ($notify) {
             Notification::make()
@@ -293,8 +362,14 @@ class SitRunnerPage extends Page
             return;
         }
 
+        $previous = $this->steps[$stepIndex]['status'];
         $this->steps[$stepIndex]['status'] = $upper;
-        $this->saveRun(false);
+        try {
+            $this->saveRun(false);
+        } catch (ValidationException $e) {
+            $this->steps[$stepIndex]['status'] = $previous;
+            throw $e;
+        }
     }
 
     /**
@@ -359,12 +434,20 @@ class SitRunnerPage extends Page
             return;
         }
 
-        $runId = $this->selectedRunId ?: 0;
+        $imageInfo = @getimagesizefromstring($binary);
+        $expectedMime = 'image/'.($ext === 'jpg' ? 'jpeg' : $ext);
+        if (! is_array($imageInfo) || ($imageInfo['mime'] ?? '') !== $expectedMime) {
+            throw ValidationException::withMessages(['steps' => 'Dữ liệu được gửi không phải ảnh hợp lệ.']);
+        }
+
+        $runId = $this->getCurrentRun()->id;
         $stepNo = $stepIndex + 1;
         $fileName = "step{$stepNo}_".now()->format('Ymd_His').'_'.Str::lower(Str::random(5)).".{$ext}";
         $relativePath = "sit-evidence/{$runId}/{$fileName}";
 
-        Storage::disk('public')->put($relativePath, $binary);
+        if (! Storage::disk('local')->put($relativePath, $binary)) {
+            throw ValidationException::withMessages(['steps' => 'Không thể lưu ảnh bằng chứng.']);
+        }
 
         $this->steps[$stepIndex]['images'] ??= [];
         $this->steps[$stepIndex]['images'][] = [
@@ -469,25 +552,14 @@ class SitRunnerPage extends Page
 
     protected function getCurrentRun(): SitTestRun
     {
-        $template = $this->getTemplate();
-        if ($this->selectedRunId) {
-            $run = $template->testRuns()->whereKey($this->selectedRunId)->first();
-            if ($run) {
-                return $run;
-            }
-        }
-
-        $latest = $template->testRuns()->latest('id')->first();
-        if ($latest) {
-            return $latest;
-        }
-
-        return $this->createRunRecord($template, 'Đợt kiểm thử SIT #1', 'SIT');
+        return $this->getTemplate()->testRuns()->whereKey($this->loadedRunId)->firstOrFail();
     }
 
     protected function loadRunState(SitTestRun $run): void
     {
         $this->selectedRunId = $run->id;
+        $this->loadedRunId = $run->id;
+        $this->runRevision = (int) $run->revision;
         $this->runTitle = $run->run_title;
         $this->runEnvironment = $run->environment ?: 'SIT';
         $this->testerName = (string) ($run->tester_name ?: (User::current()?->name ?: 'Admin'));

@@ -425,7 +425,7 @@ class SmartReportSeeder extends Seeder
             'iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAACXBIWXMAAAsTAAALEwEAmpwYAAAAB3RJTUUH6AsTEg0x4r7I2QAAAB1pVFh0Q29tbWVudAAAAAAAQ3JlYXRlZCB3aXRoIEdJTVBkLmUHAAAAHklEQVQoz2NgYGD4z8DAwMgwquFUA8OoBgYGBgYACokBAd67X3gAAAAASUVORK5CYII='
         );
         $sampleRelPath = 'sit-evidence/sample/step1_sample.png';
-        Storage::disk('public')->put($sampleRelPath, $samplePng ?: '');
+        Storage::disk('local')->put($sampleRelPath, $samplePng ?: '');
 
         SitTestRun::updateOrCreate(
             ['run_code' => 'SIT-ERPSYNC-20261119-01'],
