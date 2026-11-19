@@ -95,8 +95,9 @@ class SitRunnerPage extends Page
     public function getSubheading(): string|Htmlable|null
     {
         $t = $this->getTemplate();
+        $version = $this->loadedRunId !== null ? $this->getCurrentRun()->template_version : $t->version;
 
-        return "Mã kịch bản: {$t->template_code} | Phân hệ: ".($t->module_name ?: 'Chung')." | Phiên bản: v{$t->version}";
+        return "Mã kịch bản: {$t->template_code} | Phân hệ: ".($t->module_name ?: 'Chung')." | Phiên bản: v{$version}";
     }
 
     public function getTemplate(): SitTemplate
@@ -173,6 +174,8 @@ class SitRunnerPage extends Page
             'status' => SitTestRun::STATUS_IN_PROGRESS,
             'summary_notes' => $currentRun->summary_notes,
             'steps_data' => $currentRun->steps_data,
+            'step_fields' => $currentRun->resolvedStepFields(),
+            'template_version' => $currentRun->template_version,
             'created_by' => User::current()?->id,
         ]);
         $cloned->syncOverallStatus();
@@ -219,7 +222,7 @@ class SitRunnerPage extends Page
         $rules = [];
         $attributes = [];
         foreach ($this->steps as $index => $step) {
-            foreach ($this->getTemplate()->resolvedStepFields() as $field) {
+            foreach ($run->resolvedStepFields() as $field) {
                 $attributes["steps.{$index}.fields.{$field['key']}"] = 'Bước '.($index + 1).' — '.$field['label'];
                 $rules["steps.{$index}.fields.{$field['key']}"] = [
                     Rule::requiredIf(($step['status'] ?? '') === SitTestRun::STEP_PASS && $field['required']),
@@ -289,7 +292,7 @@ class SitRunnerPage extends Page
      */
     public function addStep(?string $title = null): void
     {
-        $fieldDefs = $this->getTemplate()->resolvedStepFields();
+        $fieldDefs = $this->getCurrentRun()->resolvedStepFields();
         $emptyFields = [];
         foreach ($fieldDefs as $fd) {
             $emptyFields[$fd['key']] = '';
@@ -549,6 +552,11 @@ class SitRunnerPage extends Page
         }
 
         return $counts;
+    }
+
+    public function getStepFieldsProperty(): array
+    {
+        return $this->getCurrentRun()->resolvedStepFields();
     }
 
     public function getAvailableRunsProperty(): Collection

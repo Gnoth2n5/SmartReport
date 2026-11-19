@@ -12,6 +12,7 @@ use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
+use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\KeyValue;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
@@ -21,6 +22,7 @@ use Filament\Forms\Components\Toggle;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Actions;
 use Filament\Schemas\Components\Grid;
+use Filament\Schemas\Components\Group;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Text;
 use Filament\Schemas\Components\Utilities\Get;
@@ -32,6 +34,7 @@ use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Str;
 use UnitEnum;
 
 class SitTemplateResource extends Resource
@@ -93,7 +96,7 @@ class SitTemplateResource extends Resource
                             ->nullable(),
                     ]),
 
-                Section::make('Cấu hình Trường thông tin của Bước (Step Fields)')
+                Section::make('Trường tùy biến')->collapsed()
                     ->description('Định nghĩa các ô nhập liệu tiêu chuẩn cho mỗi bước kiểm thử (khi chạy test vẫn có thể thêm trường phụ tùy ý)')
                     ->schema([
                         Repeater::make('step_fields')
@@ -103,12 +106,12 @@ class SitTemplateResource extends Resource
                                 Grid::make(['default' => 1, 'md' => 4])
                                     ->schema([
                                         TextInput::make('key')
-                                            ->label('Mã trường (Key)')
-                                            ->required()
+                                            ->label('Mã trường')
+                                            ->required()->regex('/^[a-zA-Z_][a-zA-Z0-9_]*$/')->distinct()->live(onBlur: true)
                                             ->placeholder('vd: action, expected, actual'),
                                         TextInput::make('label')
                                             ->label('Nhãn hiển thị')
-                                            ->required()
+                                            ->required()->live(onBlur: true)
                                             ->placeholder('vd: Thao tác thực hiện'),
                                         Select::make('type')
                                             ->label('Kiểu ô nhập')
@@ -137,23 +140,30 @@ class SitTemplateResource extends Resource
                     ->schema([
                         Repeater::make('default_steps')
                             ->label('Các bước kiểm thử mẫu')
+                            ->afterStateHydrated(function (Repeater $component, array $state): void {
+                                $template = new SitTemplate(['default_steps' => $state]);
+                                $component->state($template->default_steps);
+                            })
                             ->schema([
                                 TextInput::make('title')
                                     ->label('Tiêu đề bước')
                                     ->required()
                                     ->placeholder('vd: Bước 1 - Tạo đơn hàng xuất khẩu trên hệ thống'),
-                                Grid::make(['default' => 1, 'md' => 3])
-                                    ->schema([
-                                        Textarea::make('action')
-                                            ->label('Thao tác thực hiện')
-                                            ->rows(2),
-                                        Textarea::make('test_data')
-                                            ->label('Dữ liệu đầu vào (Input)')
-                                            ->rows(2),
-                                        Textarea::make('expected')
-                                            ->label('Kết quả mong đợi (Expected)')
-                                            ->rows(2),
-                                    ]),
+                                Hidden::make('uid')->default(fn (): string => 'step_'.Str::lower(Str::random(8))),
+                                Group::make()->schema(function (Get $get): array {
+                                    $template = new SitTemplate(['step_fields' => $get('data.step_fields', isAbsolute: true)]);
+
+                                    return array_map(function (array $field) {
+                                        $name = 'fields.'.$field['key'];
+                                        $component = match ($field['type']) {
+                                            'select' => Select::make($name)->options($field['options'] ?? []),
+                                            'text' => TextInput::make($name),
+                                            default => Textarea::make($name)->rows(2),
+                                        };
+
+                                        return $component->label($field['label'])->nullable();
+                                    }, $template->resolvedStepFields());
+                                })->columns(['default' => 1, 'md' => 2]),
                             ])
                             ->addActionLabel('Thêm bước mẫu')
                             ->defaultItems(1)

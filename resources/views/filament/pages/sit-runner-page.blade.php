@@ -11,7 +11,7 @@
     @endif
     @php
         $template = $this->getTemplate();
-        $fieldDefs = $template->resolvedStepFields();
+        $fieldDefs = $this->stepFields;
         $allRuns = $this->availableRuns;
         $metrics = $this->metrics;
     @endphp

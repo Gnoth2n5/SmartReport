@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Str;
 
 class SitTemplate extends Model
 {
@@ -81,6 +82,11 @@ class SitTemplate extends Model
             ? $this->step_fields
             : self::defaultStepFields();
 
+        return self::normalizeStepFields($fields);
+    }
+
+    public static function normalizeStepFields(array $fields): array
+    {
         $normalized = [];
         foreach ($fields as $idx => $f) {
             if (! is_array($f)) {
@@ -93,13 +99,36 @@ class SitTemplate extends Model
             $normalized[] = [
                 'key' => $key,
                 'label' => trim((string) ($f['label'] ?? $key)),
-                'type' => in_array($f['type'] ?? 'textarea', ['text', 'textarea', 'select'], true) ? $f['type'] : 'textarea',
+                'type' => in_array($f['type'] ?? 'textarea', ['text', 'textarea', 'select'], true) ? ($f['type'] ?? 'textarea') : 'textarea',
                 'required' => (bool) ($f['required'] ?? false),
                 'options' => is_array($f['options'] ?? null) ? $f['options'] : [],
             ];
         }
 
         return $normalized ?: self::defaultStepFields();
+    }
+
+    public function setDefaultStepsAttribute(array $steps): void
+    {
+        $oldSteps = json_decode($this->attributes['default_steps'] ?? '[]', true) ?: [];
+        $byUid = collect($oldSteps)->keyBy('uid');
+        $normalized = [];
+        foreach (array_values($steps) as $index => $step) {
+            $uid = $step['uid'] ?? $oldSteps[$index]['uid'] ?? 'step_'.Str::lower(Str::random(8));
+            $old = $byUid->get($uid, []);
+            $fields = (array) ($step['fields'] ?? []);
+            foreach ($step as $key => $value) {
+                if (! in_array($key, ['uid', 'step_no', 'title', 'status', 'fields', 'extra_fields', 'images'], true)) {
+                    $fields[$key] = $value;
+                }
+            }
+            $normalized[] = [
+                ...array_intersect_key($step, array_flip(['step_no', 'title', 'status', 'extra_fields', 'images'])),
+                'uid' => $uid,
+                'fields' => array_replace((array) ($old['fields'] ?? []), $fields),
+            ];
+        }
+        $this->attributes['default_steps'] = json_encode($normalized, JSON_UNESCAPED_UNICODE);
     }
 
     /**

@@ -22,7 +22,7 @@ class SitDocumentExporter
         $outputPath ??= $this->tempFilePath("sit_{$template->template_code}_{$run->run_code}", 'xlsx');
         $this->ensureParentDirectory($outputPath);
 
-        $fieldDefs = $template->resolvedStepFields();
+        $fieldDefs = $run->resolvedStepFields();
         $steps = is_array($run->steps_data) ? array_values($run->steps_data) : [];
         $metrics = $run->computeMetrics();
 
@@ -197,7 +197,7 @@ class SitDocumentExporter
         $outputPath ??= $this->tempFilePath("sit_{$template->template_code}_{$run->run_code}", 'docx');
         $this->ensureParentDirectory($outputPath);
 
-        $fieldDefs = $template->resolvedStepFields();
+        $fieldDefs = $run->resolvedStepFields();
         $steps = is_array($run->steps_data) ? array_values($run->steps_data) : [];
         $metrics = $run->computeMetrics();
 
@@ -214,7 +214,7 @@ class SitDocumentExporter
         // Summary metadata table
         $bodyXml .= $this->docxKeyValueTable([
             ['Mã đợt chạy (Run Code)', "{$run->run_code} — {$run->run_title}"],
-            ['Phân hệ / Phiên bản', ($template->module_name ?: '—')." (v{$template->version})"],
+            ['Phân hệ / Phiên bản', ($template->module_name ?: '—')." (v{$run->template_version})"],
             ['Môi trường & Người test', "{$run->environment} | ".($run->tester_name ?: 'Admin')." | {$testedAtStr}"],
             ['Trạng thái tổng thể', "{$run->status} ({$summaryText})"],
             ['Ghi chú tổng kết', (string) ($run->summary_notes ?: '—')],
@@ -328,7 +328,7 @@ class SitDocumentExporter
      */
     public function renderHtmlContent(SitTemplate $template, SitTestRun $run): string
     {
-        $fieldDefs = $template->resolvedStepFields();
+        $fieldDefs = $run->resolvedStepFields();
         $steps = is_array($run->steps_data) ? array_values($run->steps_data) : [];
         $metrics = $run->computeMetrics();
         $testedAtStr = $run->tested_at ? $run->tested_at->format('d/m/Y H:i') : now()->format('d/m/Y H:i');
@@ -417,7 +417,7 @@ class SitDocumentExporter
         </head>
         <body>
             <h1>BIÊN BẢN KIỂM THỬ TÍCH HỢP HỆ THỐNG (SIT)</h1>
-            <p class="subtitle">{$e($template->template_name)} ({$e($template->template_code)}) — Phiên bản {$e($template->version)}</p>
+            <p class="subtitle">{$e($template->template_name)} ({$e($template->template_code)}) — Phiên bản {$e($run->template_version)}</p>
             <table class="meta-table">
                 <tr><th>Đợt kiểm thử</th><td>{$e($run->run_title)} ({$e($run->run_code)})</td></tr>
                 <tr><th>Môi trường & Người thực hiện</th><td>{$e($run->environment)} | {$e($run->tester_name ?: 'Admin')} | {$e($testedAtStr)}</td></tr>

@@ -39,6 +39,8 @@ class SitTestRun extends Model
         'status',
         'summary_notes',
         'steps_data',
+        'step_fields',
+        'template_version',
         'created_by',
     ];
 
@@ -47,8 +49,23 @@ class SitTestRun extends Model
         return [
             'tested_at' => 'datetime',
             'steps_data' => 'array',
+            'step_fields' => 'array',
             'revision' => 'integer',
         ];
+    }
+
+    protected static function booted(): void
+    {
+        static::creating(function (self $run): void {
+            $template = $run->template;
+            $run->step_fields ??= $template->resolvedStepFields();
+            $run->template_version ??= $template->version;
+        });
+    }
+
+    public function resolvedStepFields(): array
+    {
+        return SitTemplate::normalizeStepFields($this->step_fields ?? $this->template->resolvedStepFields());
     }
 
     /**
@@ -91,7 +108,7 @@ class SitTestRun extends Model
             if (! is_array($raw)) {
                 continue;
             }
-            $fields = is_array($raw['fields'] ?? null) ? $raw['fields'] : [];
+            $fields = array_intersect_key(is_array($raw['fields'] ?? null) ? $raw['fields'] : [], array_flip(array_column($fieldDefs, 'key')));
             foreach ($fieldDefs as $fd) {
                 $k = $fd['key'];
                 if (! array_key_exists($k, $fields)) {
